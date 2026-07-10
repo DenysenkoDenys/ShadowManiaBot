@@ -1,0 +1,14 @@
+{
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "db:wait": "wait-on tcp:localhost:5432",
+    "dev": "pnpm db:up && pnpm db:wait && pnpm --parallel --filter @shadowmania/api --filter @shadowmania/admin --filter @shadowmania/bot dev",
+    "dev:backend": "pnpm --parallel --filter @shadowmania/api --filter @shadowmania/bot dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "wait-on": "^8.0.5"
+  }
+}

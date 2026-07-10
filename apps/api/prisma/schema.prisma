@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CardRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+  MYTHIC
+}
+
+enum CardRank {
+  NORMAL
+  SHINY
+  GOLDEN
+  ANIMATED
+  MYTHIC
+}
+
+enum SeasonStatus {
+  PLANNED
+  ACTIVE
+  ENDED
+}
+
+enum ClanRole {
+  LEADER
+  OFFICER
+  MEMBER
+}
+
+enum TradeStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+model User {
+  id                String              @id @default(cuid())
+  telegramId        String              @unique
+  username          String?
+  displayName       String
+  avatarUrl         String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  lastLoginAt       DateTime?
+  streakCount       Int                 @default(0)
+  dustBalance       Int                 @default(0)
+  packOpens         Int                 @default(0)
+  lastCardClaimAt   DateTime?
+  universePoints    Int                 @default(0)
+  bonusClaims       Int                 @default(0)
+  totalCardClaims Int @default(0)
+  hasCustomNickname Boolean @default(false)
+  notifyArenaTimer Boolean   @default(true)
+  notifyCardTimer  Boolean   @default(true)
+  premiumUntil     DateTime?
+  inventory         CardInstance[]
+  clanMemberships   ClanMember[]
+  achievements      UserAchievement[]
+  tradeListings     TradeListing[]
+  pityCounters      PityCounter[]
+  dailyRewardClaims DailyRewardClaim[]
+}
+
+model CardSet {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  emoji       String   @default("🎴")
+  theme       String
+  rewardText  String
+  seasonId    String?
+  season      Season?  @relation(fields: [seasonId], references: [id])
+  cards       Card[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Season {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  theme       String
+  status      SeasonStatus  @default(PLANNED)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  cards       Card[]
+  cardSets    CardSet[]
+  clans       Clan[]
+  clanWars    ClanWar[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Card {
+  id               String          @id @default(cuid())
+  name             String          @unique
+  rarity           CardRarity
+  seasonId         String
+  cardSetId        String?
+  basePower        Int             @default(0)
+  health           Int             @default(0)
+  imageUrl         String?
+  evolutionLevel   Int             @default(1)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  season           Season          @relation(fields: [seasonId], references: [id])
+  cardSet          CardSet?        @relation(fields: [cardSetId], references: [id])
+  instances        CardInstance[]
+  sourceEvolutions CardEvolution[] @relation("SourceEvolution")
+  targetEvolutions CardEvolution[] @relation("TargetEvolution")
+}
+
+model CardEvolution {
+  id             String   @id @default(cuid())
+  sourceCardId   String
+  targetCardId   String   @unique
+  dustCost       Int      @default(0)
+  requiredCopies Int      @default(0)
+  sourceCard     Card     @relation("SourceEvolution", fields: [sourceCardId], references: [id])
+  targetCard     Card     @relation("TargetEvolution", fields: [targetCardId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model CardInstance {
+  id         String   @id @default(cuid())
+  ownerId    String
+  cardId     String
+  rank       CardRank @default(NORMAL)
+  copies     Int      @default(1)
+  isLocked   Boolean  @default(false)
+  acquiredAt DateTime @default(now())
+  owner      User     @relation(fields: [ownerId], references: [id])
+  card       Card     @relation(fields: [cardId], references: [id])
+
+  @@unique([ownerId, cardId])
+}
+
+model Clan {
+  id          String               @id @default(cuid())
+  name        String               @unique
+  tag         String               @unique
+  description String?
+  banner      String?
+  seasonId    String?
+  weeklyScore Int                  @default(0)
+  totalCards  Int                  @default(0)
+  bankDust    Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  season      Season?              @relation(fields: [seasonId], references: [id])
+  members     ClanMember[]
+  wars        ClanWarParticipant[]
+  quests      ClanQuest[]
+}
+
+model ClanMember {
+  id                String   @id @default(cuid())
+  clanId            String
+  userId            String
+  role              ClanRole @default(MEMBER)
+  joinedAt          DateTime @default(now())
+  contributionScore Int      @default(0)
+  clan              Clan     @relation(fields: [clanId], references: [id])
+  user              User     @relation(fields: [userId], references: [id])
+
+  @@unique([clanId, userId])
+}
+
+model ClanWar {
+  id           String                @id @default(cuid())
+  seasonId     String
+  status       String                @default("scheduled")
+  startsAt     DateTime?
+  endsAt       DateTime?
+  season       Season                @relation(fields: [seasonId], references: [id])
+  participants ClanWarParticipant[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+}
+
+model ClanWarParticipant {
+  warId  String
+  clanId String
+  score  Int     @default(0)
+  result String?
+  war    ClanWar @relation(fields: [warId], references: [id])
+  clan   Clan    @relation(fields: [clanId], references: [id])
+
+  @@id([warId, clanId])
+}
+
+model ClanQuest {
+  id          String    @id @default(cuid())
+  clanId      String
+  title       String
+  progress    Int       @default(0)
+  target      Int       @default(1)
+  rewardText  String
+  completedAt DateTime?
+  clan        Clan      @relation(fields: [clanId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model PityCounter {
+  id          String     @id @default(cuid())
+  userId      String
+  kind        String
+  rarity      CardRarity
+  misses      Int        @default(0)
+  lastResetAt DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id])
+
+  @@unique([userId, kind, rarity])
+}
+
+model DailyRewardClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  day       Int
+  claimedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, day])
+}
+
+model UserAchievement {
+  id             String   @id @default(cuid())
+  userId         String
+  achievementKey String
+  unlockedAt     DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, achievementKey])
+}
+
+model TradeListing {
+  id             String      @id @default(cuid())
+  sellerId       String
+  cardInstanceId String      @unique
+  title          String
+  priceDust      Int
+  status         TradeStatus @default(ACTIVE)
+  createdAt      DateTime    @default(now())
+  expiresAt      DateTime?
+  seller         User        @relation(fields: [sellerId], references: [id])
+}

@@ -140,7 +140,7 @@ export const upsertPlayerProfile = async (input: {
         lastLoginAt: new Date()
       }
     });
-    await seedStarterInventoryForUser(prisma, user.id);
+    
 
     const refreshedUser = await prisma.user.findUnique({
       where: { id: user.id },

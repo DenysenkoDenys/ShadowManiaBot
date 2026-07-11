@@ -38,7 +38,7 @@ const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const CLAIM_BUTTON_TEXT = 'Отримати карту 🎫';
 const MY_CARDS_BUTTON_TEXT = 'Мої карти 🗃️';
 const SETTINGS_BUTTON_TEXT = 'Налаштування ⚙️';
-const MENU_BUTTON_TEXT = 'Меню 📋'; 
+const MENU_BUTTON_TEXT = 'Меню 📋';
 
 const mainKeyboard = {
   keyboard: [
@@ -116,6 +116,319 @@ const formatSettingsMessage = (settings) => {
 const formatProgressBar = (percent, length = 15) => {
   const filled = Math.round((percent / 100) * length);
   return '█'.repeat(filled) + '░'.repeat(length - filled);
+};
+
+const formatArenaHomeMessage = (displayName, team) => {
+  const filled = team.slots.filter(Boolean);
+  const lines = [
+    `🏟 ${displayName}, ти можеш зібрати команду з карт та боротися з іншими гравцями`,
+    '',
+    '✊ Твоя команда'
+  ];
+
+  if (filled.length === 0) {
+    lines.push('Команда порожня — натисни "🔴 Команда", щоб обрати карток');
+  } else {
+    filled.forEach((card, i) => {
+      const prefix = i === filled.length - 1 ? '└─➤' : '├─➤';
+      const rarityEmoji = RARITY_EMOJI[card.rarity] ?? '⚪';
+      lines.push(`${prefix} ${rarityEmoji} ${card.name}`);
+    });
+  }
+
+  lines.push(
+    '',
+    `🗡 Атака: ${team.totalAttack}${team.clanBonusAttack ? ` + ✖️ ${team.clanBonusAttack} (клановий бонус)` : ''}`,
+    `❤️ Здоров'я: ${team.totalHealth}${team.clanBonusHealth ? ` + 💙 ${team.clanBonusHealth} (клановий бонус)` : ''}`
+  );
+
+  return lines.join('\n');
+};
+
+const buildArenaHomeKeyboard = () => ({
+  inline_keyboard: [
+    [{ text: '🔍 Пошук суперника', callback_data: 'arena:search' }],
+    [{ text: '🔴 Команда', callback_data: 'arena:team' }, { text: '📊 Статистика', callback_data: 'arena:stats' }],
+    [{ text: '🐉 Сезонний Бос', callback_data: 'arena:boss' }],
+    [{ text: '🔙 Назад', callback_data: 'menu:back' }]
+  ]
+});
+
+const handleArenaHome = async (chatId, messageId, from) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  const [team] = await Promise.all([callApi(`/api/player/${from.id}/arena/team`)]);
+
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatArenaHomeMessage(displayName, team), { reply_markup: buildArenaHomeKeyboard() });
+};
+
+const formatTeamBuilderMessage = (card, index, total) =>
+  [
+    `Виберіть картку для вашої команди (Всесвіт: 🧑‍🎓 Naruto)`,
+    '',
+    '🎴 Картка',
+    `${RARITY_EMOJI[card.rarity] ?? '⚪'} ${card.name}`,
+    `🗡 Атака: ${card.attack}  ❤️ Здоров'я: ${card.health}`
+  ].join('\n');
+
+const buildTeamBuilderKeyboard = (cards, index, team) => {
+  const total = cards.length;
+  const prevIndex = index > 0 ? index - 1 : total - 1;
+  const nextIndex = index < total - 1 ? index + 1 : 0;
+  const currentCardId = cards[index]?.cardId;
+
+  const slotRows = team.slots.map((slot, slotIndex) => {
+    const rarityEmoji = slot ? (RARITY_EMOJI[slot.rarity] ?? '⚪') : '';
+    const label = slot ? `${rarityEmoji} ${slot.name}` : '➕ Порожньо';
+    return [{
+      text: `${label} ${slot ? '❌' : ''}`.trim(),
+      callback_data: `arena:teamslot:${slotIndex}:${index}`
+    }];
+  });
+
+  return {
+    inline_keyboard: [
+      [
+        { text: '◀️', callback_data: `arena:teamnav:${prevIndex}` },
+        { text: `${index + 1}/${total}`, callback_data: 'col:noop' },
+        { text: '▶️', callback_data: `arena:teamnav:${nextIndex}` }
+      ],
+      ...slotRows,
+      [{ text: '🔙 Назад до арени', callback_data: 'arena:home' }]
+    ]
+  };
+};
+
+const formatShopMessage = (shop) =>
+  [
+    '🛍 Магазин',
+    '',
+    `🪙 Твої коіни: ${shop.dustBalance.toLocaleString('uk-UA')}`,
+    `🎟 Спроби: ${shop.bonusClaims}`,
+    '',
+    `Купити спробу: 🪙 ${shop.bonusClaimCost} за 1 шт.`,
+    '',
+    'Крафт гарантованої картки (за коіни):'
+  ].join('\n');
+
+const buildShopKeyboard = (shop) => ({
+  inline_keyboard: [
+    [
+      { text: `🎟 +1 спроба (${shop.bonusClaimCost})`, callback_data: 'shop:buy:1' },
+      { text: `🎟 +5 спроб (${shop.bonusClaimCost * 5})`, callback_data: 'shop:buy:5' }
+    ],
+    ...RARITY_ORDER.map((rarity) => [{
+      text: `${RARITY_EMOJI[rarity]} ${RARITY_LABELS[rarity]} — ${shop.craftCosts[rarity]} 🪙`,
+      callback_data: `shop:craft:${rarity}`
+    }]),
+    [{ text: '🔙 До меню', callback_data: 'menu:back' }]
+  ]
+});
+
+const handleShop = async (chatId, messageId, from) => {
+  const shop = await callApi(`/api/player/${from.id}/shop`);
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatShopMessage(shop), { reply_markup: buildShopKeyboard(shop) });
+};
+
+const handleShopBuyClaims = async (chatId, messageId, from, quantity) => {
+  const result = await callApi(`/api/player/${from.id}/shop/buy-claims`, {
+    method: 'POST',
+    body: JSON.stringify({ quantity })
+  });
+
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  if (result.status === 'not-enough-dust') {
+    await sendMessage(chatId, `❌ Недостатньо коінів. Потрібно ${result.required}, у тебе ${result.have}.`, {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 До магазину', callback_data: 'menu:shop' }]] }
+    });
+    return;
+  }
+
+  await sendMessage(chatId, `✅ Куплено ${quantity} спроб(и)! Тепер у тебе ${result.bonusClaims} 🎟`, {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 До магазину', callback_data: 'menu:shop' }]] }
+  });
+};
+
+const formatCraftResultMessage = (result) => {
+  if (result.isNew) {
+    return [
+      `✨ Крафт успішний! Нова картка:`,
+      '',
+      `${RARITY_EMOJI[result.card.rarity]} ${result.card.name}`,
+      `🗡 Атака: ${result.card.attack}`,
+      `❤️ Здоров'я: ${result.card.health}`,
+      `🌐 Всесвіт: ${result.card.universe}`
+    ].join('\n');
+  }
+
+  return [
+    `♻️ Ця картка вже була у тебе — отримано повторку:`,
+    '',
+    `${RARITY_EMOJI[result.card.rarity]} ${result.card.name}`,
+    `⛩ +${result.card.value} pts`,
+    `💎 Очки всесвіту: ${result.universePoints} pts`
+  ].join('\n');
+};
+
+const handleShopCraft = async (chatId, messageId, from, rarity) => {
+  const result = await callApi(`/api/player/${from.id}/shop/craft`, {
+    method: 'POST',
+    body: JSON.stringify({ rarity })
+  });
+
+  if (messageId) await deleteMessage(chatId, messageId);
+  const backKeyboard = { inline_keyboard: [[{ text: '🔙 До магазину', callback_data: 'menu:shop' }]] };
+
+  if (result.status === 'not-enough-dust') {
+    await sendMessage(chatId, `❌ Недостатньо коінів. Потрібно ${result.required}, у тебе ${result.have}.`, { reply_markup: backKeyboard });
+    return;
+  }
+
+  await sendCardMessage(chatId, result.card, formatCraftResultMessage(result), backKeyboard);
+};
+
+const handleTeamBuilder = async (chatId, messageId, from, index) => {
+  const [cards, team] = await Promise.all([
+    callApi(`/api/player/${from.id}/arena/team/cards`).then((r) => r.cards),
+    callApi(`/api/player/${from.id}/arena/team`)
+  ]);
+
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  if (cards.length === 0) {
+    await sendMessage(chatId, 'У тебе ще немає жодної картки. Спочатку отримай картки!', {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 Назад до арени', callback_data: 'arena:home' }]] }
+    });
+    return;
+  }
+
+  const safeIndex = ((index % cards.length) + cards.length) % cards.length;
+  const card = cards[safeIndex];
+  const caption = formatTeamBuilderMessage(card, safeIndex, cards.length);
+  const keyboard = buildTeamBuilderKeyboard(cards, safeIndex, team);
+
+  await sendCardMessage(chatId, card, caption, keyboard);
+};
+
+const handleTeamSlotToggle = async (chatId, messageId, from, slotIndex, browserIndex) => {
+  const cardsBefore = await callApi(`/api/player/${from.id}/arena/team/cards`).then((r) => r.cards);
+  const card = cardsBefore[browserIndex % cardsBefore.length];
+
+  await callApi(`/api/player/${from.id}/arena/team/slot`, {
+    method: 'POST',
+    body: JSON.stringify({ slotIndex, cardId: card.cardId })
+  });
+
+  await handleTeamBuilder(chatId, messageId, from, 0);
+};
+
+const formatArenaStatsMessage = (displayName, stats) =>
+  [
+    `📊 ${displayName}, ось твоя статистика битв`,
+    '',
+    '📁 В цьому всесвіті (🧑‍🎓 Naruto)',
+    '- - - - - - -',
+    '',
+    `🏆 Перемог: ${stats.wins}`,
+    `💀 Поразок: ${stats.losses}`,
+    `🛡 Відбито нападів: ${stats.defended}`,
+    `🎖 Всього битв: ${stats.totalBattles}`
+  ].join('\n');
+
+const handleArenaStats = async (chatId, messageId, from) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  const stats = await callApi(`/api/player/${from.id}/arena/stats`);
+
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatArenaStatsMessage(displayName, stats), {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 Назад до арени', callback_data: 'arena:home' }]] }
+  });
+};
+
+const formatArenaBattleResultMessage = (from, result) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  const resultLine = result.win ? '✨ Перемога! ✨' : '💀 Поразка...';
+
+  return [
+    resultLine,
+    '',
+    `🧑 ${displayName}`,
+    `  └─➤ Наносить ⚔️ ${result.totalDamageDealt} шкоди`,
+    '',
+    `🎭 ${result.opponent.displayName}`,
+    `  └─➤ ❤️ ${result.opponent.totalHealth}→💀${Math.max(0, result.opponent.totalHealth - result.totalDamageDealt)}`,
+    '',
+    `🗡 Всього завдано шкоди: ${result.totalDamageDealt}`,
+    `🩸 Шкода від суперника: ${result.totalDamageTaken}`,
+    `🎖 Всього раундів: ${result.rounds}`,
+    '',
+    `🌸 Тримай свою винагороду за ${result.win ? 'перемогу' : 'участь'}:`,
+    `+${result.dustGained} 💠 пилу, +${result.pointsGained} pts`
+  ].join('\n');
+};
+
+const handleArenaSearch = async (chatId, messageId, from) => {
+  try {
+    const result = await callApi(`/api/player/${from.id}/arena/search`, { method: 'POST' });
+
+    if (messageId) await deleteMessage(chatId, messageId);
+
+    const backKeyboard = { inline_keyboard: [[{ text: '🔙 Назад до арени', callback_data: 'arena:home' }]] };
+
+    if (result.status === 'cooldown') {
+      await sendMessage(chatId, `🏟 Наступний бій буде доступний через ⏳ ${formatDuration(result.remainingMs)}`, { reply_markup: backKeyboard });
+      return;
+    }
+
+    if (result.status === 'no-team') {
+      await sendMessage(chatId, '🏟 Спочатку зібери команду з 5 карток кнопкою "🔴 Команда"!', { reply_markup: backKeyboard });
+      return;
+    }
+
+    await sendMessage(chatId, formatArenaBattleResultMessage(from, result), {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📜 Історія бою', callback_data: 'arena:history' }, { text: '🔙 Назад до арени', callback_data: 'arena:home' }]
+        ]
+      }
+    });
+  } catch (error) {
+    console.error('Failed to search arena battle:', error);
+    await sendMessage(chatId, 'Не вдалося провести бій на арені. Спробуйте ще раз трохи пізніше.');
+  }
+};
+
+const handleArenaHistory = async (chatId, messageId, from) => {
+  const { log } = await callApi(`/api/player/${from.id}/arena/history`);
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  const backKeyboard = { inline_keyboard: [[{ text: '🔙 Назад до арени', callback_data: 'arena:home' }]] };
+
+  if (!log) {
+    await sendMessage(chatId, 'Історія боїв поки порожня.', { reply_markup: backKeyboard });
+    return;
+  }
+
+  const lines = [
+    '📜 Історія останнього бою',
+    '',
+    `Суперник: ${log.opponentName}${log.isPlayerOpponent ? ' (гравець)' : ' (бот)'}`,
+    `Результат: ${log.win ? '🏆 Перемога' : '💀 Поразка'}`,
+    `Раундів: ${log.rounds}`,
+    `Завдано шкоди: ${log.totalDamageDealt}`,
+    `Отримано шкоди: ${log.totalDamageTaken}`
+  ];
+
+  await sendMessage(chatId, lines.join('\n'), { reply_markup: backKeyboard });
+};
+
+const handleArenaBoss = async (chatId, messageId, from) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, '🐉 Сезонний Бос ще в розробці. Слідкуй за оновленнями в 📜 Хроніках!', {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 Назад до арени', callback_data: 'arena:home' }]] }
+  });
 };
 
 const formatMenuMessage = (player) =>
@@ -269,9 +582,8 @@ const sendCardMessage = async (chatId, card, caption, keyboard) => {
   await sendMessage(chatId, caption, keyboard ? { reply_markup: keyboard } : {});
 };
 
-// --- Message formatting: claim flow ---
 
-const formatNewCardMessage = (card) =>
+const formatNewCardMessage = (card, result) =>
   [
     `⚡️ ${card.name}/${card.universe}`,
     `🌎 Ранг: ${card.rarityLabel}`,
@@ -279,6 +591,9 @@ const formatNewCardMessage = (card) =>
     `❤️ Здоров'я: ${card.health}`,
     `💎 Цінність: ${card.value} pts`,
     `🌐 Всесвіт: ${card.universe}`,
+    '',
+    `⛩ +${result.pointsGained} pts`,
+    `✨ +${result.dustGained} пилу`,
     `🎲 Використано 1 спробу!`
   ].join('\n');
 
@@ -322,6 +637,21 @@ const getOwnedCardsByUniverseAndRarity = (collection, universeName, rarity) => {
   return universe.cards
     .filter((card) => card.owned && card.rarity === rarity)
     .sort((a, b) => a.name.localeCompare(b.name, 'uk'));
+};
+
+const getOwnedCardsByRarity = (collection) => {
+  const byRarity = new Map(RARITY_ORDER.map((r) => [r, []]));
+  for (const universe of collection.universes) {
+    for (const card of universe.cards) {
+      if (!card.owned) continue;
+      const list = byRarity.get(card.rarity);
+      if (list) list.push(card);
+    }
+  }
+  for (const list of byRarity.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name, 'uk'));
+  }
+  return byRarity;
 };
 
 const getUniverseRarityCounts = (collection, universeName) => {
@@ -545,7 +875,6 @@ const handleCollectionRarityCard = async (chatId, messageId, from, rarity, index
   await sendCardMessage(chatId, card, caption, keyboard);
 };
 
-// --- Update handling ---
 
 const ensurePlayerRegistered = async (from) => {
   await callApi('/api/player/upsert', {
@@ -576,8 +905,7 @@ const handleClaimCard = async (chatId, from) => {
       return;
     }
 
-    // status === 'new'
-    await sendCardMessage(chatId, result.card, formatNewCardMessage(result.card));
+    await sendCardMessage(chatId, result.card, formatNewCardMessage(result.card, result));
   } catch (error) {
     console.error('Failed to claim card:', error);
     await sendMessage(chatId, 'Не вдалося отримати картку. Спробуйте ще раз трохи пізніше.');
@@ -616,8 +944,97 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
-    if (data === 'settings:chronicles') {
-      await sendMessage(chatId, CHRONICLES_TEXT);
+    if (data === 'col:chronicles') {
+      await handleChronicles(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'menu:back') {
+      await handleMenuBack(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'menu:universe') {
+      await handleMenuUniverse(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'menu:arena' || data === 'arena:home') {
+      await handleArenaHome(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'arena:search') {
+      await handleArenaSearch(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'arena:team') {
+      await handleTeamBuilder(chatId, messageId, from, 0);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const teamNavMatch = data.match(/^arena:teamnav:(\d+)$/);
+    if (teamNavMatch) {
+      await handleTeamBuilder(chatId, messageId, from, Number(teamNavMatch[1]));
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const teamSlotMatch = data.match(/^arena:teamslot:(\d+):(\d+)$/);
+    if (teamSlotMatch) {
+      await handleTeamSlotToggle(chatId, messageId, from, Number(teamSlotMatch[1]), Number(teamSlotMatch[2]));
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'arena:stats') {
+      await handleArenaStats(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'arena:history') {
+      await handleArenaHistory(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'arena:boss') {
+      await handleArenaBoss(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'menu:shop') {
+      await handleShop(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const shopBuyMatch = data.match(/^shop:buy:(\d+)$/);
+    if (shopBuyMatch) {
+      await handleShopBuyClaims(chatId, messageId, from, Number(shopBuyMatch[1]));
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const shopCraftMatch = data.match(/^shop:craft:([a-z]+)$/);
+    if (shopCraftMatch) {
+      await handleShopCraft(chatId, messageId, from, shopCraftMatch[1]);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const menuSectionMatch = data.match(/^menu:(rating|quests|craft|clan|bonuses|gamepass|referrals|channels|help)$/);
+    if (menuSectionMatch) {
+      await handleMenuSection(chatId, messageId, from, menuSectionMatch[1]);
       await answerCallbackQuery(callbackQuery.id);
       return;
     }
@@ -639,31 +1056,6 @@ const handleCallbackQuery = async (callbackQuery) => {
     const navMatch = data.match(/^col:nav:([a-z]+):(\d+)$/);
     if (navMatch) {
       await handleCollectionRarityCard(chatId, messageId, from, navMatch[1], Number(navMatch[2]));
-      await answerCallbackQuery(callbackQuery.id);
-      return;
-    }
-
-    if (data === 'col:chronicles') {
-      await handleChronicles(chatId, messageId, from);
-      await answerCallbackQuery(callbackQuery.id);
-      return;
-    }
-
-    if (data === 'menu:back') {
-      await handleMenuBack(chatId, messageId, from);
-      await answerCallbackQuery(callbackQuery.id);
-      return;
-    }
-
-    if (data === 'menu:universe') {
-      await handleMenuUniverse(chatId, messageId, from);
-      await answerCallbackQuery(callbackQuery.id);
-      return;
-    }
-
-    const menuSectionMatch = data.match(/^menu:(arena|rating|quests|craft|clan|shop|bonuses|gamepass|referrals|channels|help)$/);
-    if (menuSectionMatch) {
-      await handleMenuSection(chatId, messageId, from, menuSectionMatch[1]);
       await answerCallbackQuery(callbackQuery.id);
       return;
     }

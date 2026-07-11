@@ -52,16 +52,16 @@ export const seedCardSets: SeedCardSet[] = [
 ];
 
 export const seedCards: SeedCard[] = [
-  { name: 'Наруто Узумакі', rarity: 'legendary', season: 'Season 1', universe: 'Naruto', attack: 1800, health: 3000, imageUrl: '../photo/Naruto/Naruto.webp' },
-  { name: 'Саске Учіха', rarity: 'epic', season: 'Season 1', universe: 'Naruto', attack: 1600, health: 2600, imageUrl: '../photo/Naruto/Sasuke.jpg' },
-  { name: 'Сакура Харуно', rarity: 'rare', season: 'Season 1', universe: 'Naruto', attack: 1000, health: 1800, imageUrl: '../photo/Naruto/Sakura.webp' },
-  { name: 'Какаші Хатаке', rarity: 'epic', season: 'Season 1', universe: 'Naruto', attack: 1500, health: 2400, imageUrl: '../photo/Naruto/Hatake.jpeg' },
-  { name: 'Мадара Учіха', rarity: 'mythic', season: 'Season 1', universe: 'Naruto', attack: 2500, health: 4000, imageUrl: '../photo/Naruto/Madara.webp' },
-  { name: 'Джирайя', rarity: 'rare', season: 'Season 1', universe: 'Naruto', attack: 1100, health: 1900, imageUrl: '../photo/Naruto/Jiraya.webp' },
-  { name: 'Хіната Хьюга', rarity: 'common', season: 'Season 1', universe: 'Naruto', attack: 700, health: 1300, imageUrl: '../photo/Naruto/Hinata.webp' },
-  { name: 'Шікамару Нара', rarity: 'common', season: 'Season 1', universe: 'Naruto', attack: 650, health: 1200, imageUrl: '../photo/Naruto/Shikamaru.webp' },
-  { name: 'Гаара', rarity: 'epic', season: 'Season 1', universe: 'Naruto', attack: 1550, health: 2500, imageUrl: '../photo/Naruto/Gaara.webp' },
-  { name: 'Ітачі Учіха', rarity: 'legendary', season: 'Season 1', universe: 'Naruto', attack: 1900, health: 3100, imageUrl: '../photo/Naruto/Itachi.webp' }
+  { name: 'Наруто Узумакі', rarity: 'legendary', season: 'Season 1', universe: 'Naruto', attack: 4200, health: 7000, imageUrl: '../photo/Naruto/Naruto.webp' },
+  { name: 'Саске Учіха', rarity: 'epic', season: 'Season 1', universe: 'Naruto', attack: 3400, health: 5600, imageUrl: '../photo/Naruto/Sasuke.jpg' },
+  { name: 'Сакура Харуно', rarity: 'rare', season: 'Season 1', universe: 'Naruto', attack: 1800, health: 3200, imageUrl: '../photo/Naruto/Sakura.webp' },
+  { name: 'Какаші Хатаке', rarity: 'epic', season: 'Season 1', universe: 'Naruto', attack: 3200, health: 5200, imageUrl: '../photo/Naruto/Hatake.jpeg' },
+  { name: 'Мадара Учіха', rarity: 'mythic', season: 'Season 1', universe: 'Naruto', attack: 6500, health: 10000, imageUrl: '../photo/Naruto/Madara.webp' },
+  { name: 'Джирайя', rarity: 'rare', season: 'Season 1', universe: 'Naruto', attack: 2000, health: 3400, imageUrl: '../photo/Naruto/Jiraya.webp' },
+  { name: 'Хіната Хьюга', rarity: 'common', season: 'Season 1', universe: 'Naruto', attack: 1200, health: 2200, imageUrl: '../photo/Naruto/Hinata.webp' },
+  { name: 'Шікамару Нара', rarity: 'common', season: 'Season 1', universe: 'Naruto', attack: 1100, health: 2000, imageUrl: '../photo/Naruto/Shikamaru.webp' },
+  { name: 'Гаара', rarity: 'epic', season: 'Season 1', universe: 'Naruto', attack: 3300, health: 5400, imageUrl: '../photo/Naruto/Gaara.webp' },
+  { name: 'Ітачі Учіха', rarity: 'legendary', season: 'Season 1', universe: 'Naruto', attack: 4400, health: 7200, imageUrl: '../photo/Naruto/Itachi.webp' }
 ];
 
 export const seedClans: SeedClan[] = [

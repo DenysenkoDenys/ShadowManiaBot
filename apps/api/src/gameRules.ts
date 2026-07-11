@@ -1,4 +1,22 @@
+export const ARENA_COOLDOWN_MS = 30 * 60 * 1000;
+export const ARENA_TEAM_SIZE = 5;
+export const ARENA_RATING_K = 24;
+export const ARENA_WIN_DUST = { min: 20, max: 50 };
+export const ARENA_LOSS_DUST = { min: 5, max: 15 };
+export const ARENA_WIN_POINTS = 100;
+export const ARENA_LOSS_POINTS = 20;
+export const ARENA_PVP_CHANCE = 0.5; 
 export const rewardLadder = [100, 250, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000] as const;
+
+export const SHOP_BONUS_CLAIM_COST = 150;
+
+export const SHOP_CRAFT_COST: Record<RarityKey, number> = {
+  common: 300,
+  rare: 800,
+  epic: 2500,
+  legendary: 8000,
+  mythic: 25000
+};
 
 export const pityRules = [
   {
@@ -102,23 +120,20 @@ export const designPillars = [
   }
 ] as const;
 
-// --- Card claim system ---
-
-export const CARD_CLAIM_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 години
+export const CARD_CLAIM_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 
 export const rarityConfig = {
-  common: { label: 'Звичайна', weight: 45, points: 50, dustMin: 5, dustMax: 15 },
-  rare: { label: 'Рідкісна', weight: 30, points: 150, dustMin: 15, dustMax: 30 },
-  epic: { label: 'Епічна', weight: 15, points: 500, dustMin: 30, dustMax: 60 },
-  legendary: { label: 'Легендарна', weight: 8, points: 1500, dustMin: 60, dustMax: 120 },
-  mythic: { label: 'Міфічна', weight: 2, points: 5000, dustMin: 150, dustMax: 300 }
+  common: { label: 'Звичайна', weight: 45, points: 100, dustMin: 20, dustMax: 40 },
+  rare: { label: 'Рідкісна', weight: 30, points: 350, dustMin: 40, dustMax: 80 },
+  epic: { label: 'Епічна', weight: 15, points: 1200, dustMin: 100, dustMax: 200 },
+  legendary: { label: 'Легендарна', weight: 8, points: 4000, dustMin: 250, dustMax: 500 },
+  mythic: { label: 'Міфічна', weight: 2, points: 12000, dustMin: 600, dustMax: 1200 }
 } as const;
 
 export type RarityKey = keyof typeof rarityConfig;
 
 export const rarityOrder: RarityKey[] = ['common', 'rare', 'epic', 'legendary', 'mythic'];
 
-/** Formats milliseconds as "0г. 5хв. 11с." to match the in-bot cooldown message. */
 export const formatDuration = (ms: number): string => {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);

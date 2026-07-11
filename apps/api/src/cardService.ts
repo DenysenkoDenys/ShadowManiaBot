@@ -17,7 +17,14 @@ export type ClaimedCardView = {
 
 export type ClaimResult =
   | { status: 'cooldown'; remainingMs: number; bonusClaims: number }
-  | { status: 'new'; card: ClaimedCardView }
+  | {
+    status: 'new';
+    card: ClaimedCardView;
+    pointsGained: number;
+    dustGained: number;
+    universePoints: number;
+    dustBalance: number;
+  }
   | {
     status: 'duplicate';
     card: ClaimedCardView;
@@ -98,8 +105,10 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     }
 
     const usingBonusClaim = onCooldown && user.bonusClaims > 0;
-
     const rarity = pickRandomRarity();
+    const cfg = rarityConfig[rarity];
+
+    // Вибір карти
     const candidates = await prisma.card.findMany({
       where: { rarity: rarity.toUpperCase() as any },
       include: { cardSet: true, season: true }
@@ -107,6 +116,7 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     const pool = candidates.length > 0 ? candidates : await prisma.card.findMany({ include: { cardSet: true, season: true } });
     const card = pool[Math.floor(Math.random() * pool.length)];
 
+    // Оновлення таймерів та бонусів
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -120,7 +130,26 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
       where: { ownerId_cardId: { ownerId: user.id, cardId: card.id } }
     });
 
-    const cfg = rarityConfig[rarity];
+    const dustGained = randomDust(rarity);
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        dustBalance: { increment: dustGained },
+        universePoints: { increment: cfg.points }
+      }
+    });
+
+    if (existingInstance) {
+      await prisma.cardInstance.update({
+        where: { id: existingInstance.id },
+        data: { copies: { increment: 1 } }
+      });
+    } else {
+      await prisma.cardInstance.create({
+        data: { ownerId: user.id, cardId: card.id, rank: 'NORMAL' }
+      });
+    }
+
     const cardView: ClaimedCardView = {
       name: card.name,
       rarity,
@@ -132,36 +161,17 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
       imageUrl: card.imageUrl ?? null
     };
 
-    if (existingInstance) {
-      const dust = randomDust(rarity);
-      const updatedUser = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          dustBalance: { increment: dust },
-          universePoints: { increment: cfg.points }
-        }
-      });
-      await prisma.cardInstance.update({
-        where: { id: existingInstance.id },
-        data: { copies: { increment: 1 } }
-      });
-
-      return {
-        status: 'duplicate',
-        card: cardView,
-        pointsGained: cfg.points,
-        dustGained: dust,
-        universePoints: updatedUser.universePoints,
-        dustBalance: updatedUser.dustBalance
-      };
-    }
-
-    await prisma.cardInstance.create({ data: { ownerId: user.id, cardId: card.id, rank: 'NORMAL' } });
-
-    return { status: 'new', card: cardView };
+    return {
+      status: existingInstance ? 'duplicate' : 'new',
+      card: cardView,
+      pointsGained: cfg.points,
+      dustGained,
+      universePoints: updatedUser.universePoints,
+      dustBalance: updatedUser.dustBalance
+    };
   }
 
-  // Fallback: no database configured yet, keep the loop working in-memory.
+  // Fallback: in-memory mode
   const memUser = getMemoryUser(telegramId);
   const onCooldown = memUser.lastCardClaimAt !== null && now - memUser.lastCardClaimAt < CARD_CLAIM_COOLDOWN_MS;
 
@@ -170,46 +180,41 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     return { status: 'cooldown', remainingMs: CARD_CLAIM_COOLDOWN_MS - elapsed, bonusClaims: memUser.bonusClaims };
   }
 
-  if (onCooldown) {
-    memUser.bonusClaims -= 1;
-  }
+  if (onCooldown) memUser.bonusClaims -= 1;
 
   const rarity = pickRandomRarity();
   const pool = seedCards.filter((seedCard) => seedCard.rarity === rarity);
   const finalPool = pool.length > 0 ? pool : seedCards;
   const card = finalPool[Math.floor(Math.random() * finalPool.length)];
+
   memUser.lastCardClaimAt = now;
   memUser.totalCardClaims += 1;
 
   const cfg = rarityConfig[rarity];
-  const cardView: ClaimedCardView = {
-    name: card.name,
-    rarity,
-    rarityLabel: cfg.label,
-    attack: card.attack,
-    health: card.health,
-    value: cfg.points,
-    universe: card.universe,
-    imageUrl: card.imageUrl ?? null
-  };
+  const dust = randomDust(rarity);
+  const isDuplicate = memUser.owned.has(card.name);
 
-  if (memUser.owned.has(card.name)) {
-    const dust = randomDust(rarity);
-    memUser.dustBalance += dust;
-    memUser.universePoints += cfg.points;
-
-    return {
-      status: 'duplicate',
-      card: cardView,
-      pointsGained: cfg.points,
-      dustGained: dust,
-      universePoints: memUser.universePoints,
-      dustBalance: memUser.dustBalance
-    };
-  }
-
+  memUser.dustBalance += dust;
+  memUser.universePoints += cfg.points;
   memUser.owned.add(card.name);
-  return { status: 'new', card: cardView };
+
+  return {
+    status: isDuplicate ? 'duplicate' : 'new',
+    card: {
+      name: card.name,
+      rarity,
+      rarityLabel: cfg.label,
+      attack: card.attack,
+      health: card.health,
+      value: cfg.points,
+      universe: card.universe,
+      imageUrl: card.imageUrl ?? null
+    },
+    pointsGained: cfg.points,
+    dustGained: dust,
+    universePoints: memUser.universePoints,
+    dustBalance: memUser.dustBalance
+  };
 };
 
 export const getClaimCooldown = async (telegramId: string): Promise<{ remainingMs: number; bonusClaims: number }> => {

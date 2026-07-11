@@ -4,6 +4,8 @@ import { addCard, addClan, addSeason, getDashboardSnapshot, listCards, listClans
 import { claimDailyReward, getPlayerProfile, upsertPlayerProfile } from './playerStore.js';
 import { claimCard, getClaimCooldown, getPlayerCollection, getPlayerChronicles } from './cardService.js';
 import { getPlayerSettings, toggleNotification, changeNickname } from './settingsService.js';
+import { getShopStatus, buyBonusClaims, craftCard } from './shopService.js';
+import { searchAndFight, getArenaStatus, getTeamView, getOwnedCardBrowser, setTeamSlot, getArenaStats, getLastBattleLog } from './arenaService.js';
 import {
   achievementPreview,
   cardRanks,
@@ -181,6 +183,93 @@ server.post('/api/player/:telegramId/nickname', async (request, reply) => {
 server.get('/api/player/:telegramId/chronicles', async (request) => {
   const params = request.params as { telegramId: string };
   return await getPlayerChronicles(params.telegramId);
+});
+
+server.get('/api/player/:telegramId/arena/status', async (request) => {
+  const params = request.params as { telegramId: string };
+  return await getArenaStatus(params.telegramId);
+});
+
+server.get('/api/player/:telegramId/arena/team', async (request) => {
+  const params = request.params as { telegramId: string };
+  return await getTeamView(params.telegramId);
+});
+
+server.get('/api/player/:telegramId/arena/team/cards', async (request) => {
+  const params = request.params as { telegramId: string };
+  return { cards: await getOwnedCardBrowser(params.telegramId) };
+});
+
+server.post('/api/player/:telegramId/arena/team/slot', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { slotIndex?: number; cardId?: string };
+
+  if (body.slotIndex === undefined || !body.cardId) {
+    reply.code(400);
+    return { error: 'slotIndex and cardId are required' };
+  }
+
+  const team = await setTeamSlot(params.telegramId, body.slotIndex, body.cardId);
+  if (!team) {
+    reply.code(400);
+    return { error: 'Could not update team slot' };
+  }
+  return team;
+});
+
+server.post('/api/player/:telegramId/arena/search', async (request) => {
+  const params = request.params as { telegramId: string };
+  return await searchAndFight(params.telegramId);
+});
+
+server.get('/api/player/:telegramId/arena/stats', async (request) => {
+  const params = request.params as { telegramId: string };
+  return await getArenaStats(params.telegramId);
+});
+
+server.get('/api/player/:telegramId/arena/history', async (request) => {
+  const params = request.params as { telegramId: string };
+  return { log: await getLastBattleLog(params.telegramId) };
+});
+
+server.get('/api/player/:telegramId/shop', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const status = await getShopStatus(params.telegramId);
+  if (!status) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return status;
+});
+
+server.post('/api/player/:telegramId/shop/buy-claims', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { quantity?: number };
+  const quantity = body.quantity ?? 1;
+
+  const result = await buyBonusClaims(params.telegramId, quantity);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/shop/craft', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { rarity?: string };
+
+  if (!body.rarity) {
+    reply.code(400);
+    return { error: 'rarity is required' };
+  }
+
+  const result = await craftCard(params.telegramId, body.rarity as any);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
 });
 
 server.get('/meta/game-rules', async () => ({

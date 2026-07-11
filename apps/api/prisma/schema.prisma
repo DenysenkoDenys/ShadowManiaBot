@@ -60,6 +60,13 @@ model User {
   hasCustomNickname Boolean @default(false)
   notifyArenaTimer Boolean   @default(true)
   notifyCardTimer  Boolean   @default(true)
+  arenaRating       Int       @default(1000)
+  lastArenaBattleAt DateTime?
+  arenaWins         Int       @default(0)
+  arenaLosses       Int       @default(0)
+  arenaDefended       Int      @default(0)
+  arenaTeamCardIds    String[] @default([])
+  lastArenaBattleLog  Json?
   premiumUntil     DateTime?
   inventory         CardInstance[]
   clanMemberships   ClanMember[]

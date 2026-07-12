@@ -66,6 +66,8 @@ model User {
   arenaLosses       Int       @default(0)
   arenaDefended       Int      @default(0)
   arenaTeamCardIds    String[] @default([])
+  cardTimerNotified  Boolean @default(false)
+  arenaTimerNotified Boolean @default(false)
   lastArenaBattleLog  Json?
   premiumUntil     DateTime?
   inventory         CardInstance[]

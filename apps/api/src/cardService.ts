@@ -108,7 +108,6 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     const rarity = pickRandomRarity();
     const cfg = rarityConfig[rarity];
 
-    // Вибір карти
     const candidates = await prisma.card.findMany({
       where: { rarity: rarity.toUpperCase() as any },
       include: { cardSet: true, season: true }
@@ -116,13 +115,13 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     const pool = candidates.length > 0 ? candidates : await prisma.card.findMany({ include: { cardSet: true, season: true } });
     const card = pool[Math.floor(Math.random() * pool.length)];
 
-    // Оновлення таймерів та бонусів
     await prisma.user.update({
       where: { id: user.id },
       data: {
         lastCardClaimAt: new Date(now),
         bonusClaims: usingBonusClaim ? { decrement: 1 } : undefined,
-        totalCardClaims: { increment: 1 }
+        totalCardClaims: { increment: 1 },
+        cardTimerNotified: false
       }
     });
 

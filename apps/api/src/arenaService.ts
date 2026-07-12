@@ -87,7 +87,7 @@ export const getTeamView = async (telegramId: string): Promise<TeamView | null> 
 };
 
 export const getOwnedCardBrowser = async (telegramId: string): Promise<OwnedCardOption[]> => {
-  return getAvailableCardsForTeam(telegramId);
+    return getAvailableCardsForTeam(telegramId);
 };
 
 export const setTeamSlot = async (telegramId: string, slotIndex: number, cardId: string): Promise<TeamView | null> => {
@@ -104,10 +104,8 @@ export const setTeamSlot = async (telegramId: string, slotIndex: number, cardId:
     const slots = normalizeSlots(user.arenaTeamCardIds);
 
     if (slots[slotIndex] === cardId) {
-        // Повторний тап по тому ж слоту — знімає картку зі слоту.
         slots[slotIndex] = '';
     } else {
-        // Прибираємо цю картку з будь-якого іншого слоту (одна картка — один слот).
         for (let i = 0; i < slots.length; i += 1) {
             if (slots[i] === cardId) slots[i] = '';
         }
@@ -128,22 +126,22 @@ export type ArenaOpponentView = {
 };
 
 const generateBotOpponent = (attackerAttack: number, attackerHealth: number, rating: number): ArenaOpponentView => {
-  const attackVariance = 0.85 + Math.random() * 0.20; // 0.85 .. 1.05
-  const healthVariance = 0.85 + Math.random() * 0.20;
+    const attackVariance = 0.85 + Math.random() * 0.20; // 0.85 .. 1.05
+    const healthVariance = 0.85 + Math.random() * 0.20;
 
-  const nameOptions = [
-    'Тінь Акацукі', 'Мисливець на бошу', 'Найманець з ANBU', 'Розбійник з Кіри',
-    'Вигнанець з Суни', 'Зрадник Коноги', 'Дух старого клану', 'Блукач пустелі'
-  ];
+    const nameOptions = [
+        'Тінь Акацукі', 'Мисливець на бошу', 'Найманець з ANBU', 'Розбійник з Кіри',
+        'Вигнанець з Суни', 'Зрадник Коноги', 'Дух старого клану', 'Блукач пустелі'
+    ];
 
-  return {
-    displayName: nameOptions[Math.floor(Math.random() * nameOptions.length)],
-    isPlayer: false,
-    telegramId: null,
-    totalAttack: Math.max(50, Math.round(attackerAttack * attackVariance)),
-    totalHealth: Math.max(50, Math.round(attackerHealth * healthVariance)),
-    rating
-  };
+    return {
+        displayName: nameOptions[Math.floor(Math.random() * nameOptions.length)],
+        isPlayer: false,
+        telegramId: null,
+        totalAttack: Math.max(50, Math.round(attackerAttack * attackVariance)),
+        totalHealth: Math.max(50, Math.round(attackerHealth * healthVariance)),
+        rating
+    };
 };
 
 const findPlayerOpponent = async (prisma: any, telegramId: string, myRating: number): Promise<{
@@ -305,12 +303,12 @@ export const searchAndFight = async (telegramId: string): Promise<ArenaSearchRes
             arenaLosses: battle.win ? undefined : { increment: 1 },
             dustBalance: { increment: dustGained },
             universePoints: { increment: pointsGained },
-            lastArenaBattleLog: battleLog
+            lastArenaBattleLog: battleLog,
+            arenaTimerNotified: false
         }
     });
 
     if (playerMatch && !battle.win) {
-        // Гравець-суперник успішно захистився від атаки.
         await prisma.user.update({
             where: { id: playerMatch.opponentUserId },
             data: { arenaDefended: { increment: 1 } }

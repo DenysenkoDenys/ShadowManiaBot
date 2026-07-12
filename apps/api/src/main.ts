@@ -6,6 +6,7 @@ import { claimCard, getClaimCooldown, getPlayerCollection, getPlayerChronicles }
 import { getPlayerSettings, toggleNotification, changeNickname } from './settingsService.js';
 import { getShopStatus, buyBonusClaims, craftCard } from './shopService.js';
 import { searchAndFight, getArenaStatus, getTeamView, getOwnedCardBrowser, setTeamSlot, getArenaStats, getLastBattleLog } from './arenaService.js';
+import { startNotificationScheduler } from './notificationScheduler.js';
 import {
   achievementPreview,
   cardRanks,
@@ -328,5 +329,7 @@ const shutdown = async () => {
 
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
+
+startNotificationScheduler();
 
 void start();

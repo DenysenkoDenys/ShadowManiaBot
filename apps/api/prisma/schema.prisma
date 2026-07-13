@@ -68,6 +68,8 @@ model User {
   arenaTeamCardIds    String[] @default([])
   cardTimerNotified  Boolean @default(false)
   arenaTimerNotified Boolean @default(false)
+  questProgress QuestProgress[]
+  shards Int @default(0)
   lastArenaBattleLog  Json?
   premiumUntil     DateTime?
   inventory         CardInstance[]
@@ -260,4 +262,17 @@ model TradeListing {
   createdAt      DateTime    @default(now())
   expiresAt      DateTime?
   seller         User        @relation(fields: [sellerId], references: [id])
+}
+
+model QuestProgress {
+  id        String    @id @default(cuid())
+  userId    String
+  questId   String
+  periodKey String
+  progress  Int       @default(0)
+  completed Boolean   @default(false)
+  claimedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, questId, periodKey])
 }

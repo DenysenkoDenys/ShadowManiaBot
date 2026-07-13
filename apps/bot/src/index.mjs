@@ -199,6 +199,152 @@ const buildTeamBuilderKeyboard = (cards, index, team) => {
   };
 };
 
+const formatQuestReward = (quest) => {
+  const parts = [`🪙${quest.rewardDust}`, `⭐${quest.rewardPoints}`];
+  if (quest.rewardBonusClaims > 0) parts.push(`🎟${quest.rewardBonusClaims}`);
+  return parts.join(' ');
+};
+
+const formatQuestsMessage = (quests) => {
+  const lines = ['🏗 Щоденні завдання', ''];
+
+  for (const quest of quests) {
+    const status = quest.claimed ? '✅' : quest.completed ? '🎁' : '⏳';
+    lines.push(`${status} ${quest.emoji} ${quest.title} — ${quest.progress}/${quest.target}`);
+    lines.push(`   Нагорода: ${formatQuestReward(quest)}`);
+  }
+
+  return lines.join('\n');
+};
+
+const formatCraftAttemptsMessage = (displayName, status) => {
+  const lines = [
+    `🌀 ${displayName}, ти можеш скрафтити 🎫 спроби з повторок та уламків`,
+    '',
+    '🌀 Твої повторки та уламки'
+  ];
+
+  const rarityRows = RARITY_ORDER.map((rarity, i) => {
+    const isLast = i === RARITY_ORDER.length - 1;
+    const prefix = isLast ? '└➤' : '├➤';
+    return `${prefix} ${RARITY_EMOJI[rarity]} ${RARITY_LABELS[rarity]} - ${status.duplicatesByRarity[rarity]}`;
+  });
+
+  lines.push(...rarityRows);
+  lines.push(`└➤ 🛡 Уламки - ${status.shards}`);
+
+  lines.push('', '🎫 Вартість крафтів');
+  RARITY_ORDER.forEach((rarity, i) => {
+    const isLast = i === RARITY_ORDER.length - 1;
+    const prefix = isLast ? '└' : '├';
+    lines.push(`${prefix}${status.duplicatesRequired} ${RARITY_EMOJI[rarity]} ${RARITY_LABELS[rarity]} ➡ ${status.rewardByRarity[rarity]} 🎫`);
+  });
+  lines.push(`└${status.shardsRequired} 🛡 Уламки ➡ ${status.shardsReward} 🎫`);
+
+  return lines.join('\n');
+};
+
+const buildCraftAttemptsKeyboard = (status) => {
+  const rows = RARITY_ORDER
+    .filter((rarity) => status.duplicatesByRarity[rarity] >= status.duplicatesRequired)
+    .map((rarity) => [{
+      text: `Обміняти 10 ${RARITY_EMOJI[rarity]} ${RARITY_LABELS[rarity]} на ${status.rewardByRarity[rarity]} 🎫`,
+      callback_data: `craft:dup:${rarity}`
+    }]);
+
+  if (status.shards >= status.shardsRequired) {
+    rows.push([{
+      text: `Обміняти 10 🛡 Уламки на ${status.shardsReward} 🎫`,
+      callback_data: 'craft:shards'
+    }]);
+  }
+
+  rows.push([{ text: '⚒ Крафтити все', callback_data: 'craft:all' }]);
+  rows.push([{ text: '🔙 Назад', callback_data: 'menu:back' }]);
+
+  return { inline_keyboard: rows };
+};
+
+const handleCraftAttempts = async (chatId, from, messageId = null) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  const status = await callApi(`/api/player/${from.id}/craft-attempts`);
+  const text = formatCraftAttemptsMessage(displayName, status);
+  const keyboard = buildCraftAttemptsKeyboard(status);
+
+  if (messageId) {
+    const edited = await editMessageText(chatId, messageId, text, { reply_markup: keyboard });
+    if (edited?.ok) return;
+  }
+
+  await sendMessage(chatId, text, { reply_markup: keyboard });
+};
+
+const handleCraftFromDuplicates = async (chatId, from, messageId, rarity, callbackQueryId) => {
+  const result = await callApi(`/api/player/${from.id}/craft-attempts/duplicates`, {
+    method: 'POST',
+    body: JSON.stringify({ rarity })
+  });
+
+  if (result.status === 'not-enough') {
+    await answerCallbackQuery(callbackQueryId, { text: `❌ Потрібно ${result.required}, у тебе ${result.have}.`, showAlert: true });
+    return;
+  }
+
+  await answerCallbackQuery(callbackQueryId, { text: `✅ +${result.attemptsGained} 🎫 спроб!` });
+  await handleCraftAttempts(chatId, from, messageId);
+};
+
+const handleCraftFromShards = async (chatId, from, messageId, callbackQueryId) => {
+  const result = await callApi(`/api/player/${from.id}/craft-attempts/shards`, { method: 'POST' });
+
+  if (result.status === 'not-enough') {
+    await answerCallbackQuery(callbackQueryId, { text: `❌ Потрібно ${result.required}, у тебе ${result.have}.`, showAlert: true });
+    return;
+  }
+
+  await answerCallbackQuery(callbackQueryId, { text: `✅ +${result.attemptsGained} 🎫 спроб!` });
+  await handleCraftAttempts(chatId, from, messageId);
+};
+
+const handleCraftAll = async (chatId, from, messageId, callbackQueryId) => {
+  const result = await callApi(`/api/player/${from.id}/craft-attempts/all`, { method: 'POST' });
+
+  const toastText = result.totalAttemptsGained > 0
+    ? `✅ Скрафчено +${result.totalAttemptsGained} 🎫 спроб!`
+    : '❌ Недостатньо ресурсів для крафту.';
+
+  await answerCallbackQuery(callbackQueryId, { text: toastText, showAlert: result.totalAttemptsGained === 0 });
+  await handleCraftAttempts(chatId, from, messageId);
+};
+
+const buildQuestsKeyboard = (quests) => {
+  const rows = quests
+    .filter((q) => q.completed && !q.claimed)
+    .map((q) => [{ text: `🎁 Забрати: ${q.title}`, callback_data: `quest:claim:${q.id}` }]);
+
+  rows.push([{ text: '🔙 До меню', callback_data: 'menu:back' }]);
+  return { inline_keyboard: rows };
+};
+
+const handleQuests = async (chatId, messageId, from) => {
+  const { quests } = await callApi(`/api/player/${from.id}/quests`);
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatQuestsMessage(quests), { reply_markup: buildQuestsKeyboard(quests) });
+};
+
+const handleQuestClaim = async (chatId, messageId, from, questId) => {
+  const result = await callApi(`/api/player/${from.id}/quests/${questId}/claim`, { method: 'POST' });
+
+  if (result.status === 'claimed') {
+    const rewardParts = [`+${result.rewardDust} 🪙 коінів`, `+${result.rewardPoints} ⭐ очок сезону`];
+    if (result.rewardBonusClaims > 0) rewardParts.push(`+${result.rewardBonusClaims} 🎟 спроб`);
+
+    await sendMessage(chatId, `🎉 Нагороду отримано!\n\n${rewardParts.join('\n')}`);
+  }
+
+  await handleQuests(chatId, messageId, from);
+};
+
 const formatShopMessage = (shop) =>
   [
     '🛍 Магазин',
@@ -530,6 +676,9 @@ const sendMessage = (chatId, text, extra = {}) =>
 const deleteMessage = (chatId, messageId) =>
   callTelegram('deleteMessage', { chat_id: chatId, message_id: messageId });
 
+const editMessageText = (chatId, messageId, text, extra = {}) =>
+  callTelegram('editMessageText', { chat_id: chatId, message_id: messageId, text, parse_mode: 'HTML', ...extra });
+
 const answerCallbackQuery = (callbackQueryId, options = {}) =>
   callTelegram('answerCallbackQuery', { callback_query_id: callbackQueryId, ...options });
 
@@ -603,7 +752,7 @@ const formatDuplicateMessage = (displayName, result) =>
     '',
     `⛩ +${result.pointsGained} pts`,
     `💎 Очки всесвіту: ${result.universePoints} pts`,
-    `✨ +${result.dustGained} пилу`,
+    `🛡 +${result.shardsGained} уламків`,
     `🎲 Використано 1 спробу!`
   ].join('\n');
 
@@ -980,6 +1129,41 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
+    if (data === 'menu:quests') {
+      await handleQuests(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'menu:craft') {
+      await handleCraftAttempts(chatId, from, messageId);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const craftDupMatch = data.match(/^craft:dup:([a-z]+)$/);
+    if (craftDupMatch) {
+      await handleCraftFromDuplicates(chatId, from, messageId, craftDupMatch[1], callbackQuery.id);
+      return;
+    }
+
+    if (data === 'craft:shards') {
+      await handleCraftFromShards(chatId, from, messageId, callbackQuery.id);
+      return;
+    }
+
+    if (data === 'craft:all') {
+      await handleCraftAll(chatId, from, messageId, callbackQuery.id);
+      return;
+    }
+
+    const questClaimMatch = data.match(/^quest:claim:(.+)$/);
+    if (questClaimMatch) {
+      await handleQuestClaim(chatId, messageId, from, questClaimMatch[1]);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
     const teamNavMatch = data.match(/^arena:teamnav:(\d+)$/);
     if (teamNavMatch) {
       await handleTeamBuilder(chatId, messageId, from, Number(teamNavMatch[1]));
@@ -1032,7 +1216,7 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
-    const menuSectionMatch = data.match(/^menu:(rating|quests|craft|clan|bonuses|gamepass|referrals|channels|help)$/);
+    const menuSectionMatch = data.match(/^menu:(rating|clan|bonuses|gamepass|referrals|channels|help)$/);
     if (menuSectionMatch) {
       await handleMenuSection(chatId, messageId, from, menuSectionMatch[1]);
       await answerCallbackQuery(callbackQuery.id);

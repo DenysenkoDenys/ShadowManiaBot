@@ -141,3 +141,46 @@ export const formatDuration = (ms: number): string => {
   const seconds = totalSeconds % 60;
   return `${hours}г. ${minutes}хв. ${seconds}с.`;
 };
+
+
+export type QuestType = 'claim_cards' | 'new_cards' | 'arena_battles' | 'arena_wins' | 'craft_cards';
+
+export type QuestDefinition = {
+  id: string;
+  title: string;
+  emoji: string;
+  type: QuestType;
+  target: number;
+  rewardDust: number;
+  rewardPoints: number;
+  rewardBonusClaims?: number;
+};
+
+export const QUEST_DEFINITIONS: QuestDefinition[] = [
+  { id: 'claim_3_cards', title: 'Отримай 3 картки', emoji: '🎫', type: 'claim_cards', target: 3, rewardDust: 100, rewardPoints: 50 },
+  { id: 'get_1_new_card', title: 'Здобудь нову унікальну картку', emoji: '✨', type: 'new_cards', target: 1, rewardDust: 150, rewardPoints: 100 },
+  { id: 'fight_2_arena', title: 'Проведи 2 бої на арені', emoji: '⚔️', type: 'arena_battles', target: 2, rewardDust: 120, rewardPoints: 80 },
+  { id: 'win_1_arena', title: 'Здобудь перемогу на арені', emoji: '🏆', type: 'arena_wins', target: 1, rewardDust: 200, rewardPoints: 0, rewardBonusClaims: 1 },
+  { id: 'craft_1_card', title: 'Купити картку в магазині', emoji: '⚒', type: 'craft_cards', target: 1, rewardDust: 100, rewardPoints: 50 }
+];
+
+export const CRAFT_ATTEMPTS_DUPLICATES_REQUIRED = 10;
+
+export const CRAFT_ATTEMPTS_REWARD_BY_RARITY: Record<RarityKey, number> = {
+  common: 1,
+  rare: 2,
+  epic: 4,
+  legendary: 8,
+  mythic: 15
+};
+
+export const CRAFT_ATTEMPTS_SHARDS_REQUIRED = 10;
+export const CRAFT_ATTEMPTS_SHARDS_REWARD = 1;
+
+export const SHARD_REWARD_RANGE_BY_RARITY: Record<RarityKey, { min: number; max: number }> = {
+  common: { min: 1, max: 1 },
+  rare: { min: 2, max: 4 },
+  epic: { min: 5, max: 9 },
+  legendary: { min: 10, max: 15 },
+  mythic: { min: 20, max: 45 }
+};

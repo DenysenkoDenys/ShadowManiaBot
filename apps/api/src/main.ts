@@ -7,6 +7,8 @@ import { getPlayerSettings, toggleNotification, changeNickname } from './setting
 import { getShopStatus, buyBonusClaims, craftCard } from './shopService.js';
 import { searchAndFight, getArenaStatus, getTeamView, getOwnedCardBrowser, setTeamSlot, getArenaStats, getLastBattleLog } from './arenaService.js';
 import { startNotificationScheduler } from './notificationScheduler.js';
+import { getPlayerQuests, claimQuestReward } from './questService.js';
+import { getCraftAttemptsStatus, craftAttemptsFromDuplicates, craftAttemptsFromShards, craftAllAttempts } from './craftAttemptsService.js';
 import {
   achievementPreview,
   cardRanks,
@@ -266,6 +268,68 @@ server.post('/api/player/:telegramId/shop/craft', async (request, reply) => {
   }
 
   const result = await craftCard(params.telegramId, body.rarity as any);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.get('/api/player/:telegramId/quests', async (request) => {
+  const params = request.params as { telegramId: string };
+  return { quests: await getPlayerQuests(params.telegramId) };
+});
+
+server.post('/api/player/:telegramId/quests/:questId/claim', async (request, reply) => {
+  const params = request.params as { telegramId: string; questId: string };
+  const result = await claimQuestReward(params.telegramId, params.questId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player or quest not found' };
+  }
+  return result;
+});
+
+server.get('/api/player/:telegramId/craft-attempts', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const status = await getCraftAttemptsStatus(params.telegramId);
+  if (!status) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return status;
+});
+
+server.post('/api/player/:telegramId/craft-attempts/duplicates', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { rarity?: string };
+
+  if (!body.rarity) {
+    reply.code(400);
+    return { error: 'rarity is required' };
+  }
+
+  const result = await craftAttemptsFromDuplicates(params.telegramId, body.rarity as any);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/craft-attempts/shards', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const result = await craftAttemptsFromShards(params.telegramId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/craft-attempts/all', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const result = await craftAllAttempts(params.telegramId);
   if (!result) {
     reply.code(404);
     return { error: 'Player not found' };

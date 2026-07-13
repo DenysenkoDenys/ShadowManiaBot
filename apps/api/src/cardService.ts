@@ -3,6 +3,8 @@ import { seedCards } from './seedData.js';
 import { CARD_CLAIM_COOLDOWN_MS, rarityConfig, type RarityKey } from './gameRules.js';
 import type { CardInstance } from '@prisma/client';
 import { getPrisma } from './prismaClient.js';
+import { incrementQuestProgress } from './questService.js';
+import { SHARD_REWARD_RANGE_BY_RARITY } from './gameRules.js';
 
 export type ClaimedCardView = {
   name: string;
@@ -30,6 +32,8 @@ export type ClaimResult =
     card: ClaimedCardView;
     pointsGained: number;
     dustGained: number;
+    shardsGained: number;
+    shards: number;
     universePoints: number;
     dustBalance: number;
   };
@@ -130,11 +134,17 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     });
 
     const dustGained = randomDust(rarity);
+    const shardsRange = SHARD_REWARD_RANGE_BY_RARITY[rarity];
+    const shardsGained = existingInstance
+      ? Math.floor(Math.random() * (shardsRange.max - shardsRange.min + 1)) + shardsRange.min
+      : 0;
+
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
         dustBalance: { increment: dustGained },
-        universePoints: { increment: cfg.points }
+        universePoints: { increment: cfg.points },
+        shards: shardsGained ? { increment: shardsGained } : undefined
       }
     });
 
@@ -147,6 +157,11 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
       await prisma.cardInstance.create({
         data: { ownerId: user.id, cardId: card.id, rank: 'NORMAL' }
       });
+    }
+
+    await incrementQuestProgress(telegramId, 'claim_cards', 1);
+    if (!existingInstance) {
+      await incrementQuestProgress(telegramId, 'new_cards', 1);
     }
 
     const cardView: ClaimedCardView = {
@@ -165,6 +180,8 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
       card: cardView,
       pointsGained: cfg.points,
       dustGained,
+      shardsGained,
+      shards: updatedUser.shards,
       universePoints: updatedUser.universePoints,
       dustBalance: updatedUser.dustBalance
     };
@@ -192,6 +209,10 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
   const cfg = rarityConfig[rarity];
   const dust = randomDust(rarity);
   const isDuplicate = memUser.owned.has(card.name);
+  const shardsRange = SHARD_REWARD_RANGE_BY_RARITY[rarity];
+  const shardsGained = isDuplicate
+    ? Math.floor(Math.random() * (shardsRange.max - shardsRange.min + 1)) + shardsRange.min
+    : 0;
 
   memUser.dustBalance += dust;
   memUser.universePoints += cfg.points;
@@ -211,6 +232,8 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     },
     pointsGained: cfg.points,
     dustGained: dust,
+    shardsGained,
+    shards: 0,
     universePoints: memUser.universePoints,
     dustBalance: memUser.dustBalance
   };

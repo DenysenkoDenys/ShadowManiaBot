@@ -1,4 +1,5 @@
 import { getPrisma } from './prismaClient.js';
+import { incrementQuestProgress } from './questService.js';
 import {
     ARENA_COOLDOWN_MS,
     ARENA_TEAM_SIZE,
@@ -307,6 +308,11 @@ export const searchAndFight = async (telegramId: string): Promise<ArenaSearchRes
             arenaTimerNotified: false
         }
     });
+
+    await incrementQuestProgress(telegramId, 'arena_battles', 1);
+    if (battle.win) {
+        await incrementQuestProgress(telegramId, 'arena_wins', 1);
+    }
 
     if (playerMatch && !battle.win) {
         await prisma.user.update({

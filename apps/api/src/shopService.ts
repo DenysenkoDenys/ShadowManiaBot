@@ -1,6 +1,7 @@
 import { getPrisma } from './prismaClient.js';
 import { ensureSeedWorld } from './seedRuntime.js';
 import { rarityConfig, type RarityKey, SHOP_BONUS_CLAIM_COST, SHOP_CRAFT_COST } from './gameRules.js';
+import { incrementQuestProgress } from './questService.js';
 
 export type ShopStatusView = {
   dustBalance: number;
@@ -135,6 +136,8 @@ export const craftCard = async (telegramId: string, rarity: RarityKey): Promise<
       }
     });
   }
+
+  await incrementQuestProgress(telegramId, 'craft_cards', 1);
 
   return {
     status: 'crafted',

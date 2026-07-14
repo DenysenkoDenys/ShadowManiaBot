@@ -145,6 +145,315 @@ const formatArenaHomeMessage = (displayName, team) => {
   return lines.join('\n');
 };
 
+const CLAN_ROLE_LABELS = {
+  LEADER: '👑 Глава',
+  DEPUTY: '🎖 Заступник',
+  COMMANDER: '⚔️ Полководець',
+  SERGEANT: '🛡 Сержант',
+  MEMBER: '👤 Учасник'
+};
+
+const formatMyClanMessage = (clan) => {
+  const roleLabel = CLAN_ROLE_LABELS[clan.myRole] ?? clan.myRole;
+  const starterBadge = clan.isStarter ? ' 🏁' : '';
+
+  return [
+    `🛡 Рівень клану: ${clan.level}`,
+    `📝 Опис: ${clan.description ?? '—'}`,
+    `👑 Глава клану: ${clan.members.find((m) => m.role === 'LEADER')?.displayName ?? '—'}`,
+    `🌍 Казна: ${clan.bankDust.toLocaleString('uk-UA')} коінів`,
+    `👥 В клані: ${clan.members.length}/${clan.maxMembers}`,
+    `⚔️ Рейди: ${clan.raidsCount}`,
+    `🏆 Очки клану: ${clan.weeklyScore.toLocaleString('uk-UA')}`,
+    `⬆️ Для підвищення рівня: ${clan.levelUpCost.toLocaleString('uk-UA')} коінів`,
+    '',
+    `🏰 [${clan.tag}] ${clan.name}${starterBadge}`,
+    `Твоя роль: ${roleLabel}`
+  ].join('\n');
+};
+
+const buildMyClanKeyboard = (clan) => {
+  const rows = [];
+
+  rows.push([{ text: '✉️ Запросити до клану', callback_data: 'clan:invite' }]);
+
+  if (clan.myRole === 'LEADER') {
+    rows.push([{ text: '📝 Редагувати опис', callback_data: 'clan:desc:prompt' }]);
+    rows.push([{ text: '⬆️ Підняти рівень клану', callback_data: 'clan:levelup' }]);
+    rows.push([{ text: '⚙️ Управління ролями', callback_data: 'clan:roles' }]);
+    rows.push([{ text: '🗑 Видалити клан', callback_data: 'clan:delete:confirm' }]);
+  }
+
+  rows.push([{ text: '👥 Список членів', callback_data: 'clan:members' }]);
+  rows.push([{ text: '🏆 Рейтинг кланів', callback_data: 'clan:ranking' }]);
+  rows.push([{ text: '🌍 Поповнити казну', callback_data: 'clan:deposit:prompt' }]);
+  rows.push([{ text: '📊 Внески клану', callback_data: 'clan:contributions' }]);
+  rows.push([{ text: '🚪 Покинути клан', callback_data: 'clan:leave:confirm' }]);
+  rows.push([{ text: '🔙 До меню', callback_data: 'menu:back' }]);
+
+  return { inline_keyboard: rows };
+};
+
+const formatClanListMessage = (clans) => {
+  if (clans.length === 0) {
+    return '🏰 Кланів ще немає. Стань першим — створи свій!';
+  }
+
+  const lines = ['🏰 Доступні клани', ''];
+  clans.forEach((clan, i) => {
+    const starterBadge = clan.isStarter ? ' 🏁 стартовий' : '';
+    const ownerHint = clan.isStarter && clan.memberCount === 0 ? ' (без власника — вступи першим і стань главою!)' : '';
+    lines.push(`${i + 1}. [${clan.tag}] ${clan.name} — ${clan.memberCount}/${clan.maxMembers} 👥${starterBadge}${ownerHint}`);
+  });
+
+  return lines.join('\n');
+};
+
+const buildClanListKeyboard = (clans) => {
+  const rows = clans
+    .filter((c) => c.memberCount < c.maxMembers)
+    .slice(0, 10)
+    .map((c) => [{ text: `Вступити: [${c.tag}] ${c.name}`, callback_data: `clan:join:${c.id}` }]);
+
+  rows.push([{ text: '➕ Створити свій клан', callback_data: 'clan:create:prompt' }]);
+  rows.push([{ text: '🔙 До меню', callback_data: 'menu:back' }]);
+
+  return { inline_keyboard: rows };
+};
+
+const handleClan = async (chatId, messageId, from) => {
+  const { clan } = await callApi(`/api/player/${from.id}/clan/details`);
+
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  if (clan) {
+    await sendMessage(chatId, formatMyClanMessage(clan), { reply_markup: buildMyClanKeyboard(clan) });
+    return;
+  }
+
+  const { clans } = await callApi('/api/clans');
+  await sendMessage(chatId, formatClanListMessage(clans), { reply_markup: buildClanListKeyboard(clans) });
+};
+
+const handleClanInvite = async (chatId, messageId, from) => {
+  const { clan } = await callApi(`/api/player/${from.id}/clan`);
+  if (!clan) return;
+
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? 'ShadowManiaBot';
+  const inviteLink = `https://t.me/${botUsername}?start=clan_${clan.id}`;
+
+  await sendMessage(chatId, `✉️ Запроси друзів до клану [${clan.tag}] ${clan.name}!\n\n${inviteLink}`);
+};
+
+const handleClanDescPrompt = async (chatId, messageId, from) => {
+  await sendMessage(chatId, 'Введи новий опис клану так:\n/clan_description Текст опису');
+};
+
+const handleClanDescriptionCommand = async (chatId, from, rawText) => {
+  const description = rawText.replace('/clan_description', '').trim();
+  if (!description) {
+    await sendMessage(chatId, 'Введи текст опису після команди. Приклад: /clan_description Найкращий клан!');
+    return;
+  }
+
+  const result = await callApi(`/api/player/${from.id}/clan/description`, {
+    method: 'POST',
+    body: JSON.stringify({ description })
+  });
+
+  await sendMessage(chatId, result.status === 'ok' ? '✅ Опис клану оновлено!' : '❌ Тільки глава може редагувати опис.');
+  await handleClan(chatId, null, from);
+};
+
+const handleClanLevelUp = async (chatId, messageId, from) => {
+  const result = await callApi(`/api/player/${from.id}/clan/level-up`, { method: 'POST' });
+
+  if (result.status === 'not-enough-dust') {
+    await sendMessage(chatId, `❌ Недостатньо коінів у казні. Потрібно ${result.required.toLocaleString('uk-UA')}, є ${result.have.toLocaleString('uk-UA')}.`);
+    return;
+  }
+  if (result.status === 'not-leader') {
+    await sendMessage(chatId, '❌ Тільки глава може підвищувати рівень клану.');
+    return;
+  }
+
+  await sendMessage(chatId, '✅ Рівень клану підвищено!');
+  await handleClan(chatId, null, from);
+};
+
+const handleClanDeleteConfirm = async (chatId, messageId, from) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, '⚠️ Ти дійсно хочеш видалити клан? Це незворотньо.', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '✅ Так, видалити', callback_data: 'clan:delete:execute' }],
+        [{ text: '❌ Скасувати', callback_data: 'menu:clan' }]
+      ]
+    }
+  });
+};
+
+const handleClanDeleteExecute = async (chatId, messageId, from) => {
+  const result = await callApi(`/api/player/${from.id}/clan/delete`, { method: 'POST' });
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, result.status === 'ok' ? '🗑 Клан видалено.' : '❌ Тільки глава може видалити клан.');
+  await handleClan(chatId, null, from);
+};
+
+const formatMembersListMessage = (clan) => {
+  const lines = [`👥 Учасники [${clan.tag}] ${clan.name}`, ''];
+  clan.members.forEach((m, i) => {
+    lines.push(`${i + 1}. ${CLAN_ROLE_LABELS[m.role] ?? m.role} ${m.displayName} — ${m.contributionScore.toLocaleString('uk-UA')} pts`);
+  });
+  return lines.join('\n');
+};
+
+const handleClanMembers = async (chatId, messageId, from) => {
+  const { clan } = await callApi(`/api/player/${from.id}/clan/details`);
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  await sendMessage(chatId, formatMembersListMessage(clan), {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 До клану', callback_data: 'menu:clan' }]] }
+  });
+};
+
+const formatClanRankingMessage = (ranking) => {
+  const lines = ['🏆 Рейтинг кланів', ''];
+  ranking.forEach((clan, i) => {
+    lines.push(`${i + 1}. [${clan.tag}] ${clan.name} — Ур.${clan.level} — ${clan.weeklyScore.toLocaleString('uk-UA')} pts — ${clan.memberCount} 👥`);
+  });
+  return lines.join('\n');
+};
+
+const handleClanRanking = async (chatId, messageId, from) => {
+  const { ranking } = await callApi('/api/clans/ranking');
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  await sendMessage(chatId, formatClanRankingMessage(ranking), {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 До клану', callback_data: 'menu:clan' }]] }
+  });
+};
+
+const handleClanDepositPrompt = async (chatId, messageId, from) => {
+  await sendMessage(chatId, 'Введи суму поповнення казни так:\n/clan_deposit 1000');
+};
+
+const handleClanDepositCommand = async (chatId, from, rawText) => {
+  const amountText = rawText.replace('/clan_deposit', '').trim();
+  const amount = Number(amountText);
+
+  if (!amount || amount <= 0) {
+    await sendMessage(chatId, 'Введи коректну суму. Приклад: /clan_deposit 1000');
+    return;
+  }
+
+  const result = await callApi(`/api/player/${from.id}/clan/deposit`, {
+    method: 'POST',
+    body: JSON.stringify({ amount })
+  });
+
+  if (result.status === 'not-enough-dust') {
+    await sendMessage(chatId, `❌ Недостатньо коінів. У тебе ${result.have.toLocaleString('uk-UA')}.`);
+    return;
+  }
+  if (result.status === 'not-in-clan') {
+    await sendMessage(chatId, '❌ Ти не в клані.');
+    return;
+  }
+
+  await sendMessage(chatId, `✅ Внесено ${amount.toLocaleString('uk-UA')} коінів до казни! Твій внесок: ${result.contributionScore.toLocaleString('uk-UA')}`);
+  await handleClan(chatId, null, from);
+};
+
+const handleClanContributions = async (chatId, messageId, from) => {
+  const { clan } = await callApi(`/api/player/${from.id}/clan/details`);
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  const sorted = [...clan.members].sort((a, b) => b.contributionScore - a.contributionScore);
+  const lines = ['📊 Внески клану', ''];
+  sorted.forEach((m, i) => {
+    lines.push(`${i + 1}. ${m.displayName} — ${m.contributionScore.toLocaleString('uk-UA')} 🪙`);
+  });
+
+  await sendMessage(chatId, lines.join('\n'), {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 До клану', callback_data: 'menu:clan' }]] }
+  });
+};
+
+const handleClanJoin = async (chatId, messageId, from, clanId) => {
+  const result = await callApi(`/api/player/${from.id}/clan/join`, {
+    method: 'POST',
+    body: JSON.stringify({ clanId })
+  });
+
+  const messages = {
+    'already-in-clan': '❌ Ти вже перебуваєш у клані.',
+    'clan-full': '❌ Цей клан вже заповнений.',
+    'clan-not-found': '❌ Клан не знайдено.',
+    ok: '✅ Ти успішно вступив до клану!'
+  };
+
+  await sendMessage(chatId, messages[result.status] ?? '❌ Сталася помилка.');
+  await handleClan(chatId, null, from);
+};
+
+const handleClanLeaveConfirm = async (chatId, messageId, from) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, '⚠️ Ти дійсно хочеш покинути клан?', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '✅ Так, покинути', callback_data: 'clan:leave:execute' }],
+        [{ text: '❌ Скасувати', callback_data: 'menu:clan' }]
+      ]
+    }
+  });
+};
+
+const handleClanLeaveExecute = async (chatId, messageId, from) => {
+  await callApi(`/api/player/${from.id}/clan/leave`, { method: 'POST' });
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, '🚪 Ти покинув клан.');
+  await handleClan(chatId, null, from);
+};
+
+const handleClanCreatePrompt = async (chatId, messageId, from) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(
+    chatId,
+    `Створення клану коштує 🪙 100 000 коінів.\n\nВведи назву та тег клану у форматі:\n/create_clan Назва Клану | ТЕГ\n\nНаприклад: /create_clan Тіньовий Легіон | SHDW`,
+    { reply_markup: { inline_keyboard: [[{ text: '🔙 До меню', callback_data: 'menu:back' }]] } }
+  );
+};
+
+const handleCreateClanCommand = async (chatId, from, rawText) => {
+  const payload = rawText.replace('/create_clan', '').trim();
+  const [name, tag] = payload.split('|').map((part) => part?.trim());
+
+  if (!name || !tag) {
+    await sendMessage(chatId, 'Невірний формат. Приклад: /create_clan Тіньовий Легіон | SHDW');
+    return;
+  }
+
+  const result = await callApi(`/api/player/${from.id}/clan/create`, {
+    method: 'POST',
+    body: JSON.stringify({ name, tag })
+  });
+
+  if (result.status === 'not-enough-dust') {
+    await sendMessage(chatId, `❌ Недостатньо коінів. Потрібно ${result.required.toLocaleString('uk-UA')}, у тебе ${result.have.toLocaleString('uk-UA')}.`);
+    return;
+  }
+
+  const messages = {
+    'already-in-clan': '❌ Ти вже перебуваєш у клані. Спочатку покинь поточний.',
+    'name-taken': '❌ Клан з такою назвою або тегом вже існує.',
+    ok: `✅ Клан "${name}" [${tag.toUpperCase()}] створено! Ти його глава.`
+  };
+
+  await sendMessage(chatId, messages[result.status] ?? '❌ Сталася помилка.');
+  await handleClan(chatId, null, from);
+};
+
 const buildArenaHomeKeyboard = () => ({
   inline_keyboard: [
     [{ text: '🔍 Пошук суперника', callback_data: 'arena:search' }],
@@ -160,6 +469,76 @@ const handleArenaHome = async (chatId, messageId, from) => {
 
   if (messageId) await deleteMessage(chatId, messageId);
   await sendMessage(chatId, formatArenaHomeMessage(displayName, team), { reply_markup: buildArenaHomeKeyboard() });
+};
+
+const buildRolesListKeyboard = (clan, myTelegramId) => {
+  const rows = clan.members
+    .filter((m) => m.telegramId !== myTelegramId)
+    .slice(0, 20)
+    .map((m) => [{
+      text: `${CLAN_ROLE_LABELS[m.role] ?? m.role} ${m.displayName}`,
+      callback_data: `clan:roleuser:${m.telegramId}`
+    }]);
+
+  rows.push([{ text: '🔙 До клану', callback_data: 'menu:clan' }]);
+  return { inline_keyboard: rows };
+};
+
+const handleClanRolesList = async (chatId, messageId, from) => {
+  const { clan } = await callApi(`/api/player/${from.id}/clan`);
+
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  if (!clan || clan.myRole !== 'LEADER') {
+    await sendMessage(chatId, '❌ Тільки глава клану може призначати ролі.');
+    return;
+  }
+
+  await sendMessage(chatId, '⚙️ Обери учасника, щоб змінити роль:', {
+    reply_markup: buildRolesListKeyboard(clan, String(from.id))
+  });
+};
+
+const CLAN_ASSIGNABLE_ROLES = [
+  { role: 'DEPUTY', label: '🎖 Заступник' },
+  { role: 'COMMANDER', label: '⚔️ Полководець' },
+  { role: 'SERGEANT', label: '🛡 Сержант' },
+  { role: 'MEMBER', label: '👤 Учасник' }
+];
+
+const buildRoleChoiceKeyboard = (targetTelegramId) => ({
+  inline_keyboard: [
+    ...CLAN_ASSIGNABLE_ROLES.map((r) => [{
+      text: r.label,
+      callback_data: `clan:setrole:${targetTelegramId}:${r.role}`
+    }]),
+    [{ text: '🔙 Назад', callback_data: 'clan:roles' }]
+  ]
+});
+
+const handleClanRoleUserChoice = async (chatId, messageId, from, targetTelegramId) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, 'Обери нову роль для учасника:', {
+    reply_markup: buildRoleChoiceKeyboard(targetTelegramId)
+  });
+};
+
+const handleClanSetRole = async (chatId, messageId, from, targetTelegramId, role) => {
+  const result = await callApi(`/api/player/${from.id}/clan/set-role`, {
+    method: 'POST',
+    body: JSON.stringify({ targetTelegramId, role })
+  });
+
+  const messages = {
+    'not-leader': '❌ Тільки глава клану може призначати ролі.',
+    'target-not-in-clan': '❌ Цей гравець не в твоєму клані.',
+    'cannot-change-own-role': '❌ Не можна змінити свою власну роль.',
+    ok: `✅ Роль оновлено на ${CLAN_ROLE_LABELS[role] ?? role}`
+  };
+
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, messages[result.status] ?? '❌ Сталася помилка.');
+  await handleClan(chatId, null, from);
 };
 
 const formatTeamBuilderMessage = (card, index, total) =>
@@ -245,21 +624,26 @@ const formatCraftAttemptsMessage = (displayName, status) => {
 };
 
 const buildCraftAttemptsKeyboard = (status) => {
-  const rows = RARITY_ORDER
-    .filter((rarity) => status.duplicatesByRarity[rarity] >= status.duplicatesRequired)
-    .map((rarity) => [{
-      text: `Обміняти 10 ${RARITY_EMOJI[rarity]} ${RARITY_LABELS[rarity]} на ${status.rewardByRarity[rarity]} 🎫`,
-      callback_data: `craft:dup:${rarity}`
-    }]);
+  const availableRarities = RARITY_ORDER.filter((rarity) => status.duplicatesByRarity[rarity] >= status.duplicatesRequired);
+  const shardsAvailable = status.shards >= status.shardsRequired;
 
-  if (status.shards >= status.shardsRequired) {
+  const rows = availableRarities.map((rarity) => [{
+    text: `Обміняти 10 ${RARITY_EMOJI[rarity]} ${RARITY_LABELS[rarity]} на ${status.rewardByRarity[rarity]} 🎫`,
+    callback_data: `craft:dup:${rarity}`
+  }]);
+
+  if (shardsAvailable) {
     rows.push([{
       text: `Обміняти 10 🛡 Уламки на ${status.shardsReward} 🎫`,
       callback_data: 'craft:shards'
     }]);
   }
 
-  rows.push([{ text: '⚒ Крафтити все', callback_data: 'craft:all' }]);
+  const hasAnythingToCraft = availableRarities.length > 0 || shardsAvailable;
+  if (hasAnythingToCraft) {
+    rows.push([{ text: '⚒ Крафтити все', callback_data: 'craft:all' }]);
+  }
+
   rows.push([{ text: '🔙 Назад', callback_data: 'menu:back' }]);
 
   return { inline_keyboard: rows };
@@ -285,6 +669,11 @@ const handleCraftFromDuplicates = async (chatId, from, messageId, rarity, callba
     body: JSON.stringify({ rarity })
   });
 
+  if (result.status === 'locked') {
+    await answerCallbackQuery(callbackQueryId, { text: '🔒 Крафти заблоковані. Вимкни блокування в Налаштуваннях.', showAlert: true });
+    return;
+  }
+
   if (result.status === 'not-enough') {
     await answerCallbackQuery(callbackQueryId, { text: `❌ Потрібно ${result.required}, у тебе ${result.have}.`, showAlert: true });
     return;
@@ -297,6 +686,11 @@ const handleCraftFromDuplicates = async (chatId, from, messageId, rarity, callba
 const handleCraftFromShards = async (chatId, from, messageId, callbackQueryId) => {
   const result = await callApi(`/api/player/${from.id}/craft-attempts/shards`, { method: 'POST' });
 
+  if (result.status === 'locked') {
+    await answerCallbackQuery(callbackQueryId, { text: '🔒 Крафти заблоковані. Вимкни блокування в Налаштуваннях.', showAlert: true });
+    return;
+  }
+
   if (result.status === 'not-enough') {
     await answerCallbackQuery(callbackQueryId, { text: `❌ Потрібно ${result.required}, у тебе ${result.have}.`, showAlert: true });
     return;
@@ -308,6 +702,11 @@ const handleCraftFromShards = async (chatId, from, messageId, callbackQueryId) =
 
 const handleCraftAll = async (chatId, from, messageId, callbackQueryId) => {
   const result = await callApi(`/api/player/${from.id}/craft-attempts/all`, { method: 'POST' });
+
+  if (result.status === 'locked') {
+    await answerCallbackQuery(callbackQueryId, { text: '🔒 Крафти заблоковані. Вимкни блокування в Налаштуваннях.', showAlert: true });
+    return;
+  }
 
   const toastText = result.totalAttemptsGained > 0
     ? `✅ Скрафчено +${result.totalAttemptsGained} 🎫 спроб!`
@@ -426,6 +825,11 @@ const handleShopCraft = async (chatId, messageId, from, rarity) => {
 
   if (messageId) await deleteMessage(chatId, messageId);
   const backKeyboard = { inline_keyboard: [[{ text: '🔙 До магазину', callback_data: 'menu:shop' }]] };
+
+  if (result.status === 'locked') {
+    await sendMessage(chatId, '🔒 Крафти заблоковані. Вимкни блокування в Налаштуваннях, щоб продовжити.', { reply_markup: backKeyboard });
+    return;
+  }
 
   if (result.status === 'not-enough-dust') {
     await sendMessage(chatId, `❌ Недостатньо коінів. Потрібно ${result.required}, у тебе ${result.have}.`, { reply_markup: backKeyboard });
@@ -633,10 +1037,15 @@ const buildSettingsKeyboard = (settings) => {
     callback_data: 'settings:toggle:card'
   }];
 
+  const craftLockRow = [{
+    text: `Блокування крафтів ${settings.craftLocked ? '🔒' : '🔓'}`,
+    callback_data: 'settings:toggle:craft'
+  }];
+
   const chroniclesRow = [{ text: '📜 Хроніки', callback_data: 'col:chronicles' }];
 
   return {
-    inline_keyboard: [arenaRow, cardRow, chroniclesRow]
+    inline_keyboard: [arenaRow, cardRow, craftLockRow, chroniclesRow]
   };
 };
 
@@ -734,7 +1143,7 @@ const sendCardMessage = async (chatId, card, caption, keyboard) => {
 
 const formatNewCardMessage = (card, result) =>
   [
-    `⚡️ ${card.name}/${card.universe}`,
+    `${RARITY_EMOJI[card.rarity] ?? '⚪'} ${card.name}/${card.universe}`,
     `🌎 Ранг: ${card.rarityLabel}`,
     `🗡 Атака: ${card.attack}`,
     `❤️ Здоров'я: ${card.health}`,
@@ -748,7 +1157,7 @@ const formatNewCardMessage = (card, result) =>
 
 const formatDuplicateMessage = (displayName, result) =>
   [
-    `🎫 ${displayName}, попалася повторка!`,
+    `${RARITY_EMOJI[result.card.rarity] ?? '⚪'} ${displayName}, попалася повторка!`,
     '',
     `⛩ +${result.pointsGained} pts`,
     `💎 Очки всесвіту: ${result.universePoints} pts`,
@@ -1141,6 +1550,111 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
+    if (data === 'menu:clan') {
+      await handleClan(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const clanJoinMatch = data.match(/^clan:join:(.+)$/);
+    if (clanJoinMatch) {
+      await handleClanJoin(chatId, messageId, from, clanJoinMatch[1]);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:leave:confirm') {
+      await handleClanLeaveConfirm(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:leave:execute') {
+      await handleClanLeaveExecute(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:create:prompt') {
+      await handleClanCreatePrompt(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:roles') {
+      await handleClanRolesList(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:invite') {
+      await handleClanInvite(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:desc:prompt') {
+      await handleClanDescPrompt(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:levelup') {
+      await handleClanLevelUp(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:delete:confirm') {
+      await handleClanDeleteConfirm(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:delete:execute') {
+      await handleClanDeleteExecute(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:members') {
+      await handleClanMembers(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:ranking') {
+      await handleClanRanking(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:deposit:prompt') {
+      await handleClanDepositPrompt(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:contributions') {
+      await handleClanContributions(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const clanRoleUserMatch = data.match(/^clan:roleuser:(.+)$/);
+    if (clanRoleUserMatch) {
+      await handleClanRoleUserChoice(chatId, messageId, from, clanRoleUserMatch[1]);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const clanSetRoleMatch = data.match(/^clan:setrole:(.+):([A-Z]+)$/);
+    if (clanSetRoleMatch) {
+      await handleClanSetRole(chatId, messageId, from, clanSetRoleMatch[1], clanSetRoleMatch[2]);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
     const craftDupMatch = data.match(/^craft:dup:([a-z]+)$/);
     if (craftDupMatch) {
       await handleCraftFromDuplicates(chatId, from, messageId, craftDupMatch[1], callbackQuery.id);
@@ -1216,14 +1730,14 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
-    const menuSectionMatch = data.match(/^menu:(rating|clan|bonuses|gamepass|referrals|channels|help)$/);
+    const menuSectionMatch = data.match(/^menu:(rating|bonuses|gamepass|referrals|channels|help)$/);
     if (menuSectionMatch) {
       await handleMenuSection(chatId, messageId, from, menuSectionMatch[1]);
       await answerCallbackQuery(callbackQuery.id);
       return;
     }
 
-    const settingsToggleMatch = data.match(/^settings:toggle:(arena|card)$/);
+    const settingsToggleMatch = data.match(/^settings:toggle:(arena|card|craft)$/);
     if (settingsToggleMatch) {
       await handleSettingsToggle(chatId, messageId, from, settingsToggleMatch[1]);
       await answerCallbackQuery(callbackQuery.id);
@@ -1289,8 +1803,28 @@ const handleUpdate = async (update) => {
 
   console.log(`[message] chatId=${chatId} text=${JSON.stringify(text)} codePoints=${[...text].map((c) => c.codePointAt(0).toString(16)).join(',')}`);
 
-  if (text === '/start') {
+  if (text.startsWith('/start')) {
     await ensurePlayerRegistered(message.from);
+
+    const startParam = text.replace('/start', '').trim();
+    if (startParam.startsWith('clan_')) {
+      const clanId = startParam.replace('clan_', '');
+      const result = await callApi(`/api/player/${message.from.id}/clan/join`, {
+        method: 'POST',
+        body: JSON.stringify({ clanId })
+      });
+
+      const messages = {
+        'already-in-clan': '❌ Ти вже перебуваєш у клані.',
+        'clan-full': '❌ Цей клан вже заповнений.',
+        'clan-not-found': '❌ Клан не знайдено.',
+        ok: '✅ Ти успішно вступив до клану за запрошенням!'
+      };
+
+      await sendMessage(chatId, messages[result.status] ?? '❌ Сталася помилка.', { reply_markup: mainKeyboard });
+      return;
+    }
+
     await sendMessage(
       chatId,
       'Вітаю в ShadowMania! Натисни кнопку нижче, щоб отримати свою першу карту.',
@@ -1326,6 +1860,24 @@ const handleUpdate = async (update) => {
   if (text.startsWith('/change_nickname')) {
     await ensurePlayerRegistered(message.from);
     await handleChangeNickname(chatId, message.from, text);
+    return;
+  }
+
+  if (text.startsWith('/create_clan')) {
+    await ensurePlayerRegistered(message.from);
+    await handleCreateClanCommand(chatId, message.from, text);
+    return;
+  }
+
+  if (text.startsWith('/clan_description')) {
+    await ensurePlayerRegistered(message.from);
+    await handleClanDescriptionCommand(chatId, message.from, text);
+    return;
+  }
+
+  if (text.startsWith('/clan_deposit')) {
+    await ensurePlayerRegistered(message.from);
+    await handleClanDepositCommand(chatId, message.from, text);
     return;
   }
 

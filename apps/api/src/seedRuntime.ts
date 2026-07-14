@@ -78,12 +78,14 @@ export const ensureSeedWorld = async (prisma: any) => {
       where: { name: clan.name },
       update: {
         tag: clan.tag,
-        description: clan.focus
+        description: clan.focus,
+        isStarter: true
       },
       create: {
         name: clan.name,
         tag: clan.tag,
         description: clan.focus,
+        isStarter: true,
         weeklyScore: clan.name === 'Shadow Legion' ? 2500 : 0,
         totalCards: clan.name === 'Shadow Legion' ? 120 : 0,
         bankDust: clan.name === 'Shadow Legion' ? 5000 : 0

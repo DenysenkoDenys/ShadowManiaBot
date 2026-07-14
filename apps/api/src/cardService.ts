@@ -122,10 +122,10 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        lastCardClaimAt: new Date(now),
+        lastCardClaimAt: usingBonusClaim ? undefined : new Date(now),
         bonusClaims: usingBonusClaim ? { decrement: 1 } : undefined,
         totalCardClaims: { increment: 1 },
-        cardTimerNotified: false
+        cardTimerNotified: usingBonusClaim ? undefined : false
       }
     });
 

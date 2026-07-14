@@ -30,7 +30,9 @@ enum SeasonStatus {
 
 enum ClanRole {
   LEADER
-  OFFICER
+  DEPUTY
+  COMMANDER
+  SERGEANT
   MEMBER
 }
 
@@ -70,6 +72,7 @@ model User {
   arenaTimerNotified Boolean @default(false)
   questProgress QuestProgress[]
   shards Int @default(0)
+  craftLocked Boolean @default(false)
   lastArenaBattleLog  Json?
   premiumUntil     DateTime?
   inventory         CardInstance[]
@@ -159,6 +162,9 @@ model Clan {
   tag         String               @unique
   description String?
   banner      String?
+  maxMembers  Int      @default(20)
+  isStarter Boolean @default(false)
+  level Int @default(1)
   seasonId    String?
   weeklyScore Int                  @default(0)
   totalCards  Int                  @default(0)

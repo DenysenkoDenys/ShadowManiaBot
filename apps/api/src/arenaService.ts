@@ -1,5 +1,6 @@
 import { getPrisma } from './prismaClient.js';
 import { incrementQuestProgress } from './questService.js';
+import { getClanArenaBonus } from './clanService.js';
 import {
     ARENA_COOLDOWN_MS,
     ARENA_TEAM_SIZE,
@@ -84,7 +85,15 @@ export const getTeamView = async (telegramId: string): Promise<TeamView | null> 
     const totalAttack = slots.reduce((sum, s) => sum + (s?.attack ?? 0), 0);
     const totalHealth = slots.reduce((sum, s) => sum + (s?.health ?? 0), 0);
 
-    return { slots, totalAttack, totalHealth, clanBonusAttack: 0, clanBonusHealth: 0 };
+    const clanBonus = await getClanArenaBonus(telegramId);
+
+    return {
+        slots,
+        totalAttack,
+        totalHealth,
+        clanBonusAttack: clanBonus.attack,
+        clanBonusHealth: clanBonus.health
+    };
 };
 
 export const getOwnedCardBrowser = async (telegramId: string): Promise<OwnedCardOption[]> => {

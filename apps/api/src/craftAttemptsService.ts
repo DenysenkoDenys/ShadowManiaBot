@@ -53,9 +53,9 @@ export const getCraftAttemptsStatus = async (telegramId: string): Promise<CraftA
 
 export type CraftAttemptsResult =
   | { status: 'not-enough'; have: number; required: number }
+  | { status: 'locked' }
   | { status: 'ok'; attemptsGained: number; bonusClaims: number };
 
-/** Spends exactly `amount` duplicate copies of the given rarity, across as many CardInstance rows as needed. */
 const spendDuplicates = async (prisma: any, userId: string, rarity: RarityKey, amount: number): Promise<boolean> => {
   const instances = await prisma.cardInstance.findMany({
     where: { ownerId: userId, copies: { gt: 1 }, card: { rarity: rarity.toUpperCase() } },
@@ -91,6 +91,10 @@ export const craftAttemptsFromDuplicates = async (telegramId: string, rarity: Ra
   const user = await prisma.user.findUnique({ where: { telegramId } });
   if (!user) return null;
 
+  if (user.craftLocked) {
+    return { status: 'locked' } as any;
+  }
+
   const duplicatesByRarity = await getDuplicatesByRarity(prisma, user.id);
   const have = duplicatesByRarity[rarity];
 
@@ -119,6 +123,10 @@ export const craftAttemptsFromShards = async (telegramId: string): Promise<Craft
   const user = await prisma.user.findUnique({ where: { telegramId } });
   if (!user) return null;
 
+  if (user.craftLocked) {
+    return { status: 'locked' } as any;
+  }
+
   if (user.shards < CRAFT_ATTEMPTS_SHARDS_REQUIRED) {
     return { status: 'not-enough', have: user.shards, required: CRAFT_ATTEMPTS_SHARDS_REQUIRED };
   }
@@ -146,6 +154,10 @@ export const craftAllAttempts = async (telegramId: string): Promise<CraftAllResu
 
   const user = await prisma.user.findUnique({ where: { telegramId } });
   if (!user) return null;
+
+  if (user.craftLocked) {
+    return { status: 'locked' } as any;
+  }
 
   const duplicatesByRarity = await getDuplicatesByRarity(prisma, user.id);
   let totalAttempts = 0;

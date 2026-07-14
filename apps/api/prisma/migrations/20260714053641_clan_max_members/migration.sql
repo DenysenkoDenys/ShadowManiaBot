@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Clan" ADD COLUMN     "maxMembers" INTEGER NOT NULL DEFAULT 20;

@@ -54,22 +54,23 @@ export const buyBonusClaims = async (telegramId: string, quantity: number): Prom
 
 export type CraftResult =
   | { status: 'not-enough-dust'; required: number; have: number }
+  | { status: 'locked' }
   | {
-      status: 'crafted';
-      isNew: boolean;
-      card: {
-        name: string;
-        rarity: RarityKey;
-        rarityLabel: string;
-        attack: number;
-        health: number;
-        value: number;
-        universe: string;
-        imageUrl: string | null;
-      };
-      dustBalance: number;
-      universePoints: number;
+    status: 'crafted';
+    isNew: boolean;
+    card: {
+      name: string;
+      rarity: RarityKey;
+      rarityLabel: string;
+      attack: number;
+      health: number;
+      value: number;
+      universe: string;
+      imageUrl: string | null;
     };
+    dustBalance: number;
+    universePoints: number;
+  };
 
 export const craftCard = async (telegramId: string, rarity: RarityKey): Promise<CraftResult | null> => {
   const prisma = getPrisma();
@@ -79,6 +80,10 @@ export const craftCard = async (telegramId: string, rarity: RarityKey): Promise<
 
   const user = await prisma.user.findUnique({ where: { telegramId } });
   if (!user) return null;
+
+  if (user.craftLocked) {
+    return { status: 'locked' } as any;
+  }
 
   const cost = SHOP_CRAFT_COST[rarity];
   if (user.dustBalance < cost) {

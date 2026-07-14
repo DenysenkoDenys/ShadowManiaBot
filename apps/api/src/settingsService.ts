@@ -9,6 +9,7 @@ export type PlayerSettingsView = {
   premiumUntil: string | null;
   notifyArenaTimer: boolean;
   notifyCardTimer: boolean;
+  craftLocked: boolean;
 };
 
 const memorySettings = new Map<string, { notifyArenaTimer: boolean; notifyCardTimer: boolean }>();
@@ -35,7 +36,8 @@ export const getPlayerSettings = async (telegramId: string): Promise<PlayerSetti
       bonusClaims: user.bonusClaims,
       premiumUntil: user.premiumUntil?.toISOString() ?? null,
       notifyArenaTimer: user.notifyArenaTimer,
-      notifyCardTimer: user.notifyCardTimer
+      notifyCardTimer: user.notifyCardTimer,
+      craftLocked: user.craftLocked 
     };
   }
 
@@ -48,16 +50,18 @@ export const getPlayerSettings = async (telegramId: string): Promise<PlayerSetti
     bonusClaims: 0,
     premiumUntil: null,
     notifyArenaTimer: settings.notifyArenaTimer,
-    notifyCardTimer: settings.notifyCardTimer
+    notifyCardTimer: settings.notifyCardTimer,
+    craftLocked: false 
   };
 };
 
 export const toggleNotification = async (
   telegramId: string,
-  kind: 'arena' | 'card'
+  kind: 'arena' | 'card' | 'craft'
 ): Promise<PlayerSettingsView | null> => {
   const prisma = getPrisma();
-  const field = kind === 'arena' ? 'notifyArenaTimer' : 'notifyCardTimer';
+  const fieldMap = { arena: 'notifyArenaTimer', card: 'notifyCardTimer', craft: 'craftLocked' } as const;
+  const field = fieldMap[kind];
 
   if (prisma) {
     const user = await prisma.user.findUnique({ where: { telegramId } });
@@ -72,7 +76,9 @@ export const toggleNotification = async (
   }
 
   const settings = getMemorySettings(telegramId);
-  settings[field] = !settings[field];
+  if (kind !== 'craft') {
+    settings[field as 'notifyArenaTimer' | 'notifyCardTimer'] = !settings[field as 'notifyArenaTimer' | 'notifyCardTimer'];
+  }
   return getPlayerSettings(telegramId);
 };
 

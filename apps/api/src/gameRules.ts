@@ -8,6 +8,24 @@ export const ARENA_LOSS_POINTS = 20;
 export const ARENA_PVP_CHANCE = 0.5; 
 export const rewardLadder = [100, 250, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000] as const;
 
+export const CLAN_BASE_MAX_MEMBERS = 9;
+export const CLAN_LEVEL_UP_BASE_COST = 36_000_000;
+
+export const getClanMaxMembers = (level: number): number => CLAN_BASE_MAX_MEMBERS + level;
+export const getClanLevelUpCost = (level: number): number => level * CLAN_LEVEL_UP_BASE_COST;
+
+export const CLAN_CREATION_COST = 100_000;
+
+export const CLAN_ROLE_LABELS: Record<string, string> = {
+  LEADER: '👑 Глава',
+  DEPUTY: '🎖 Заступник',
+  COMMANDER: '⚔️ Полководець',
+  SERGEANT: '🛡 Сержант',
+  MEMBER: '👤 Учасник'
+};
+
+export const CLAN_ROLE_ORDER = ['LEADER', 'DEPUTY', 'COMMANDER', 'SERGEANT', 'MEMBER'];
+
 export const SHOP_BONUS_CLAIM_COST = 150;
 
 export const SHOP_CRAFT_COST: Record<RarityKey, number> = {

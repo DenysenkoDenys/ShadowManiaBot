@@ -10,6 +10,21 @@ import { startNotificationScheduler } from './notificationScheduler.js';
 import { getPlayerQuests, claimQuestReward } from './questService.js';
 import { getCraftAttemptsStatus, craftAttemptsFromDuplicates, craftAttemptsFromShards, craftAllAttempts } from './craftAttemptsService.js';
 import {
+  listClans as listActiveClans,
+  getMyClan,
+  getMyClanDetails,
+  createClan,
+  joinClan,
+  leaveClan,
+  setMemberRole,
+  updateClanDescription,
+  levelUpClan,
+  deleteClan,
+  depositToClanBank,
+  getClanRanking,
+  getClanByInviteId
+} from './clanService.js';
+import {
   achievementPreview,
   cardRanks,
   cardRarities,
@@ -153,9 +168,9 @@ server.post('/api/player/:telegramId/settings/toggle-notification', async (reque
   const params = request.params as { telegramId: string };
   const body = request.body as { kind?: 'arena' | 'card' };
 
-  if (body.kind !== 'arena' && body.kind !== 'card') {
+  if (body.kind !== 'arena' && body.kind !== 'card' && body.kind !== 'craft') {
     reply.code(400);
-    return { error: 'kind must be "arena" or "card"' };
+    return { error: 'kind must be "arena", "card" or "craft"' };
   }
 
   const settings = await toggleNotification(params.telegramId, body.kind);
@@ -335,6 +350,145 @@ server.post('/api/player/:telegramId/craft-attempts/all', async (request, reply)
     return { error: 'Player not found' };
   }
   return result;
+});
+
+server.get('/api/clans', async () => ({ clans: await listActiveClans() }));
+
+server.get('/api/player/:telegramId/clan', async (request) => {
+  const params = request.params as { telegramId: string };
+  return { clan: await getMyClan(params.telegramId) };
+});
+
+server.post('/api/player/:telegramId/clan/create', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { name?: string; tag?: string };
+
+  if (!body.name || !body.tag) {
+    reply.code(400);
+    return { error: 'name and tag are required' };
+  }
+
+  const result = await createClan(params.telegramId, body.name.trim(), body.tag.trim().toUpperCase());
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/clan/set-role', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { targetTelegramId?: string; role?: string };
+
+  if (!body.targetTelegramId || !body.role) {
+    reply.code(400);
+    return { error: 'targetTelegramId and role are required' };
+  }
+
+  const result = await setMemberRole(params.telegramId, body.targetTelegramId, body.role as any);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/clan/join', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { clanId?: string };
+
+  if (!body.clanId) {
+    reply.code(400);
+    return { error: 'clanId is required' };
+  }
+
+  const result = await joinClan(params.telegramId, body.clanId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/clan/leave', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const result = await leaveClan(params.telegramId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.get('/api/player/:telegramId/clan/details', async (request) => {
+  const params = request.params as { telegramId: string };
+  return { clan: await getMyClanDetails(params.telegramId) };
+});
+
+server.post('/api/player/:telegramId/clan/description', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { description?: string };
+
+  if (!body.description) {
+    reply.code(400);
+    return { error: 'description is required' };
+  }
+
+  const result = await updateClanDescription(params.telegramId, body.description);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/clan/level-up', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const result = await levelUpClan(params.telegramId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/clan/delete', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const result = await deleteClan(params.telegramId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.post('/api/player/:telegramId/clan/deposit', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { amount?: number };
+
+  if (!body.amount || body.amount <= 0) {
+    reply.code(400);
+    return { error: 'amount must be a positive number' };
+  }
+
+  const result = await depositToClanBank(params.telegramId, body.amount);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.get('/api/clans/ranking', async () => ({ ranking: await getClanRanking() }));
+
+server.get('/api/clans/:clanId/invite-info', async (request, reply) => {
+  const params = request.params as { clanId: string };
+  const info = await getClanByInviteId(params.clanId);
+  if (!info) {
+    reply.code(404);
+    return { error: 'Clan not found' };
+  }
+  return info;
 });
 
 server.get('/meta/game-rules', async () => ({

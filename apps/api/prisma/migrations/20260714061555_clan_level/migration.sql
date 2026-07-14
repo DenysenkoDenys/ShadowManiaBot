@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Clan" ADD COLUMN     "level" INTEGER NOT NULL DEFAULT 1;

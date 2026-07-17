@@ -24,6 +24,24 @@ export const CLAN_ROLE_LABELS: Record<string, string> = {
   MEMBER: '👤 Учасник'
 };
 
+export type BonusMilestone = {
+  threshold: number;
+  rewardBonusClaims: number;
+  rewardShards: number;
+};
+
+export const BONUS_MILESTONES: BonusMilestone[] = [
+  { threshold: 10, rewardBonusClaims: 5, rewardShards: 0 },
+  { threshold: 25, rewardBonusClaims: 10, rewardShards: 0 },
+  { threshold: 50, rewardBonusClaims: 15, rewardShards: 0 },
+  { threshold: 100, rewardBonusClaims: 20, rewardShards: 50 },
+  { threshold: 250, rewardBonusClaims: 50, rewardShards: 300 },
+  { threshold: 500, rewardBonusClaims: 100, rewardShards: 1000 },
+  { threshold: 1000, rewardBonusClaims: 150, rewardShards: 2000 },
+  { threshold: 2500, rewardBonusClaims: 200, rewardShards: 3500 },
+  { threshold: 5000, rewardBonusClaims: 300, rewardShards: 5000 }
+];
+
 export const CLAN_ROLE_ORDER = ['LEADER', 'DEPUTY', 'COMMANDER', 'SERGEANT', 'MEMBER'];
 
 export const SHOP_BONUS_CLAIM_COST = 150;

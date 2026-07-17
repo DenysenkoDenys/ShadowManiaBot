@@ -1,5 +1,6 @@
 import './loadEnv.js';
 import Fastify from 'fastify';
+import { getBonusesStatus, claimBonusMilestone } from './bonusesService.js';
 import { addCard, addClan, addSeason, getDashboardSnapshot, listCards, listClans, listPacks, listSeasons } from './contentStore.js';
 import { claimDailyReward, getPlayerProfile, upsertPlayerProfile } from './playerStore.js';
 import { claimCard, getClaimCooldown, getPlayerCollection, getPlayerChronicles } from './cardService.js';
@@ -489,6 +490,26 @@ server.get('/api/clans/:clanId/invite-info', async (request, reply) => {
     return { error: 'Clan not found' };
   }
   return info;
+});
+
+server.get('/api/player/:telegramId/bonuses', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const status = await getBonusesStatus(params.telegramId);
+  if (!status) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return status;
+});
+
+server.post('/api/player/:telegramId/bonuses/:threshold/claim', async (request, reply) => {
+  const params = request.params as { telegramId: string; threshold: string };
+  const result = await claimBonusMilestone(params.telegramId, Number(params.threshold));
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
 });
 
 server.get('/meta/game-rules', async () => ({

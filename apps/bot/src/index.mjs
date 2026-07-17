@@ -209,6 +209,70 @@ const formatClanListMessage = (clans) => {
   return lines.join('\n');
 };
 
+const formatBonusesMessage = (displayName, status) => {
+  const lines = [`🎁 ${displayName}, отримуй картки та забирай нагороди!`, ''];
+
+  for (const m of status.milestones) {
+    const rewardText = m.rewardShards > 0
+      ? `${m.rewardBonusClaims} 🎫, + ${m.rewardShards} 🛡`
+      : `${m.rewardBonusClaims} 🎫`;
+
+    if (m.claimed) {
+      lines.push(`✅ Отримано`, `🎁 Нагорода: ${rewardText}`);
+    } else if (m.unlocked) {
+      lines.push(`🎁 Доступно!`, `🎁 Нагорода: ${rewardText}`);
+    } else {
+      lines.push(`❌ ${status.totalCardClaims}/${m.threshold}`, `🎁 Нагорода: ${rewardText}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+};
+
+const buildBonusesKeyboard = (status) => {
+  const rows = status.milestones
+    .filter((m) => m.unlocked && !m.claimed)
+    .map((m) => [{ text: `🎁 Забрати (${m.threshold})`, callback_data: `bonus:claim:${m.threshold}` }]);
+
+  rows.push([{ text: '🔙 До меню', callback_data: 'menu:back' }]);
+  return { inline_keyboard: rows };
+};
+
+const handleBonuses = async (chatId, from, messageId = null) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  const status = await callApi(`/api/player/${from.id}/bonuses`);
+  const text = formatBonusesMessage(displayName, status);
+  const keyboard = buildBonusesKeyboard(status);
+
+  if (messageId) {
+    const edited = await editMessageText(chatId, messageId, text, { reply_markup: keyboard });
+    if (edited?.ok) return;
+  }
+
+  await sendMessage(chatId, text, { reply_markup: keyboard });
+};
+
+const handleBonusClaim = async (chatId, from, messageId, threshold, callbackQueryId) => {
+  const result = await callApi(`/api/player/${from.id}/bonuses/${threshold}/claim`, { method: 'POST' });
+
+  if (result.status === 'not-unlocked') {
+    await answerCallbackQuery(callbackQueryId, { text: '❌ Ще не досягнуто цього рубежу.', showAlert: true });
+    return;
+  }
+  if (result.status === 'already-claimed') {
+    await answerCallbackQuery(callbackQueryId, { text: '❌ Вже забрано.', showAlert: true });
+    return;
+  }
+
+  const rewardText = result.rewardShards > 0
+    ? `+${result.rewardBonusClaims} 🎫, +${result.rewardShards} 🛡`
+    : `+${result.rewardBonusClaims} 🎫`;
+
+  await answerCallbackQuery(callbackQueryId, { text: `✅ Отримано! ${rewardText}` });
+  await handleBonuses(chatId, from, messageId);
+};
+
 const buildClanListKeyboard = (clans) => {
   const rows = clans
     .filter((c) => c.memberCount < c.maxMembers)
@@ -1556,6 +1620,18 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
+    if (data === 'menu:bonuses') {
+      await handleBonuses(chatId, from, messageId);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const bonusClaimMatch = data.match(/^bonus:claim:(\d+)$/);
+    if (bonusClaimMatch) {
+      await handleBonusClaim(chatId, from, messageId, Number(bonusClaimMatch[1]), callbackQuery.id);
+      return;
+    }
+
     const clanJoinMatch = data.match(/^clan:join:(.+)$/);
     if (clanJoinMatch) {
       await handleClanJoin(chatId, messageId, from, clanJoinMatch[1]);
@@ -1730,7 +1806,7 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
-    const menuSectionMatch = data.match(/^menu:(rating|bonuses|gamepass|referrals|channels|help)$/);
+    const menuSectionMatch = data.match(/^menu:(rating|gamepass|referrals|channels|help)$/);
     if (menuSectionMatch) {
       await handleMenuSection(chatId, messageId, from, menuSectionMatch[1]);
       await answerCallbackQuery(callbackQuery.id);

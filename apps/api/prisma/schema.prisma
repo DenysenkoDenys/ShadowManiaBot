@@ -70,6 +70,7 @@ model User {
   arenaTeamCardIds    String[] @default([])
   cardTimerNotified  Boolean @default(false)
   arenaTimerNotified Boolean @default(false)
+  bonusMilestoneClaims BonusMilestoneClaim[]
   questProgress QuestProgress[]
   shards Int @default(0)
   craftLocked Boolean @default(false)
@@ -281,4 +282,14 @@ model QuestProgress {
   user      User      @relation(fields: [userId], references: [id])
 
   @@unique([userId, questId, periodKey])
+}
+
+model BonusMilestoneClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  threshold Int
+  claimedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, threshold])
 }

@@ -1,6 +1,6 @@
 import { ensureSeedWorld } from './seedRuntime.js';
 import { seedCards } from './seedData.js';
-import { CARD_CLAIM_COOLDOWN_MS, rarityConfig, type RarityKey } from './gameRules.js';
+import { CARD_CLAIM_COOLDOWN_MS, CARD_CLAIM_COOLDOWN_PREMIUM_MS, GAME_PASS_RARITY_WEIGHT_MULTIPLIER, rarityConfig, type RarityKey } from './gameRules.js';
 import type { CardInstance } from '@prisma/client';
 import { getPrisma } from './prismaClient.js';
 import { incrementQuestProgress } from './questService.js';
@@ -43,18 +43,23 @@ const rarityWeightTable = (Object.keys(rarityConfig) as RarityKey[]).map((rarity
   weight: rarityConfig[rarity].weight
 }));
 
-const pickRandomRarity = (): RarityKey => {
-  const totalWeight = rarityWeightTable.reduce((sum, entry) => sum + entry.weight, 0);
+const pickRandomRarity = (isPremium: boolean): RarityKey => {
+  const weightedTable = rarityWeightTable.map((entry) => ({
+    rarity: entry.rarity,
+    weight: isPremium ? entry.weight * (GAME_PASS_RARITY_WEIGHT_MULTIPLIER[entry.rarity] ?? 1) : entry.weight
+  }));
+
+  const totalWeight = weightedTable.reduce((sum, entry) => sum + entry.weight, 0);
   let roll = Math.random() * totalWeight;
 
-  for (const entry of rarityWeightTable) {
+  for (const entry of weightedTable) {
     if (roll < entry.weight) {
       return entry.rarity;
     }
     roll -= entry.weight;
   }
 
-  return rarityWeightTable[0].rarity;
+  return weightedTable[0].rarity;
 };
 
 const randomDust = (rarity: RarityKey): number => {
@@ -100,16 +105,19 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
       create: { telegramId, displayName: `Player ${telegramId}` }
     });
 
+    const isPremium = Boolean(user.premiumUntil && user.premiumUntil.getTime() > now);
+    const activeCooldownMs = isPremium ? CARD_CLAIM_COOLDOWN_PREMIUM_MS : CARD_CLAIM_COOLDOWN_MS;
+
     const lastCardClaimAt = user.lastCardClaimAt;
-    const onCooldown = lastCardClaimAt !== null && now - lastCardClaimAt.getTime() < CARD_CLAIM_COOLDOWN_MS;
+    const onCooldown = lastCardClaimAt !== null && now - lastCardClaimAt.getTime() < activeCooldownMs;
 
     if (onCooldown && user.bonusClaims <= 0) {
       const elapsed = now - lastCardClaimAt.getTime();
-      return { status: 'cooldown', remainingMs: CARD_CLAIM_COOLDOWN_MS - elapsed, bonusClaims: user.bonusClaims };
+      return { status: 'cooldown', remainingMs: activeCooldownMs - elapsed, bonusClaims: user.bonusClaims };
     }
 
     const usingBonusClaim = onCooldown && user.bonusClaims > 0;
-    const rarity = pickRandomRarity();
+    const rarity = pickRandomRarity(isPremium);
     const cfg = rarityConfig[rarity];
 
     const candidates = await prisma.card.findMany({
@@ -187,7 +195,6 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     };
   }
 
-  // Fallback: in-memory mode
   const memUser = getMemoryUser(telegramId);
   const onCooldown = memUser.lastCardClaimAt !== null && now - memUser.lastCardClaimAt < CARD_CLAIM_COOLDOWN_MS;
 
@@ -198,7 +205,7 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
 
   if (onCooldown) memUser.bonusClaims -= 1;
 
-  const rarity = pickRandomRarity();
+  const rarity = pickRandomRarity(false);
   const pool = seedCards.filter((seedCard) => seedCard.rarity === rarity);
   const finalPool = pool.length > 0 ? pool : seedCards;
   const card = finalPool[Math.floor(Math.random() * finalPool.length)];
@@ -249,8 +256,10 @@ export const getClaimCooldown = async (telegramId: string): Promise<{ remainingM
     if (!lastCardClaimAt) {
       return { remainingMs: 0, bonusClaims: user?.bonusClaims ?? 0 };
     }
+    const isPremium = Boolean(user?.premiumUntil && user.premiumUntil.getTime() > now);
+    const activeCooldownMs = isPremium ? CARD_CLAIM_COOLDOWN_PREMIUM_MS : CARD_CLAIM_COOLDOWN_MS;
     const elapsed = now - lastCardClaimAt.getTime();
-    return { remainingMs: Math.max(0, CARD_CLAIM_COOLDOWN_MS - elapsed), bonusClaims: user.bonusClaims };
+    return { remainingMs: Math.max(0, activeCooldownMs - elapsed), bonusClaims: user.bonusClaims };
   }
 
   const memUser = memoryUsers.get(telegramId);

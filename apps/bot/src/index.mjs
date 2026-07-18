@@ -230,6 +230,105 @@ const formatBonusesMessage = (displayName, status) => {
   return lines.join('\n').trim();
 };
 
+const formatGamePassMessage = (status) => {
+  const activeLine = status.isActive
+    ? `✅ Активний до ${formatDate(status.premiumUntil)}`
+    : '❌ Не активний';
+
+  return [
+    '🔑 Що дає тобі GamePass?',
+    '',
+    '⏳ Отримання карток кожні 2 години замість 3',
+    '⚔️ Бої на арені кожну годину замість двох',
+    '🔔 Сповіщення про завершення очікування карток та арени',
+    '🎲 Підвищена ймовірність випадання легендарних, епічних та міфічних карток',
+    '😊 Можливість використовувати смайлики в імені',
+    '🎫 Отримаєш +5 спроб',
+    `📅 Термін дії: ${GAME_PASS_DURATION_DAYS_TEXT} днів`,
+    '🏰 Можливість створити власний клан безкоштовно',
+    '',
+    '🔑 GamePass — добровільний донат на розвиток гри для оплати сервера і реклами',
+    '',
+    activeLine
+  ].join('\n');
+};
+
+const GAME_PASS_DURATION_DAYS_TEXT = '30';
+
+const buildGamePassKeyboard = (status) => ({
+  inline_keyboard: [
+    [{ text: `Задонатити GamePass Stars ${status.costStars}⭐`, callback_data: 'gamepass:buy' }],
+    [{ text: '🔙 Назад', callback_data: 'menu:back' }]
+  ]
+});
+
+const handleGamePass = async (chatId, messageId, from) => {
+  const status = await callApi(`/api/player/${from.id}/gamepass`);
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatGamePassMessage(status), { reply_markup: buildGamePassKeyboard(status) });
+};
+
+const handleGamePassBuy = async (chatId, from) => {
+  const status = await callApi(`/api/player/${from.id}/gamepass`);
+
+  await callTelegram('sendInvoice', {
+    chat_id: chatId,
+    title: 'ShadowMania GamePass',
+    description: 'Преміум-підписка на 30 днів: швидші таймери, бонусні спроби, підвищені шанси на рідкісні картки.',
+    payload: `gamepass_${from.id}`,
+    currency: 'XTR',
+    prices: [{ label: 'GamePass 30 днів', amount: status.costStars }]
+  });
+};
+
+const formatReferralsMessage = (status) =>
+  [
+    '🔗 Твоя реферальна система',
+    '',
+    `👥 Ти запросив: ${status.totalReferred}`,
+    `📅 Сьогодні запрошено: ${status.referredToday}/${status.dailyLimit}`,
+    '',
+    '- - - - - - -',
+    '',
+    '🔗 Твоє реферальне посилання:',
+    status.referralLink,
+    '',
+    '📢 Поширь це посилання або картку, щоб запросити друзів!',
+    `5️⃣ Обмеження: не більше ${status.dailyLimit} друзів на день.`,
+    '',
+    `🎁 За кожного запрошеного друга ти отримуєш ${REFERRAL_REWARD_TEXT} спроби + 1 день 🔑GamePass`
+  ].join('\n');
+
+const REFERRAL_REWARD_TEXT = '4🎫';
+
+const buildReferralsKeyboard = () => ({
+  inline_keyboard: [
+    [{ text: '🃏 Картка з реферальним кодом для репосту', callback_data: 'ref:card' }],
+    [{ text: '🔙 Назад', callback_data: 'menu:back' }]
+  ]
+});
+
+const handleReferrals = async (chatId, messageId, from) => {
+  const status = await callApi(`/api/player/${from.id}/referrals`);
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatReferralsMessage(status), { reply_markup: buildReferralsKeyboard() });
+};
+
+const handleReferralCard = async (chatId, messageId, from) => {
+  const status = await callApi(`/api/player/${from.id}/referrals`);
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+
+  const cardText = [
+    `⚔️ ${displayName} кличе тебе у ShadowMania!`,
+    '',
+    '🎴 Колекціонуй картки, бийся на арені, збирай клан.',
+    '',
+    `👉 ${status.referralLink}`
+  ].join('\n');
+
+  await sendMessage(chatId, cardText);
+};
+
 const buildBonusesKeyboard = (status) => {
   const rows = status.milestones
     .filter((m) => m.unlocked && !m.claimed)
@@ -1626,6 +1725,30 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
+    if (data === 'menu:gamepass') {
+      await handleGamePass(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'gamepass:buy') {
+      await handleGamePassBuy(chatId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'menu:referrals') {
+      await handleReferrals(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'ref:card') {
+      await handleReferralCard(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
     const bonusClaimMatch = data.match(/^bonus:claim:(\d+)$/);
     if (bonusClaimMatch) {
       await handleBonusClaim(chatId, from, messageId, Number(bonusClaimMatch[1]), callbackQuery.id);
@@ -1806,7 +1929,7 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
-    const menuSectionMatch = data.match(/^menu:(rating|gamepass|referrals|channels|help)$/);
+    const menuSectionMatch = data.match(/^menu:(rating|channels|help)$/);
     if (menuSectionMatch) {
       await handleMenuSection(chatId, messageId, from, menuSectionMatch[1]);
       await answerCallbackQuery(callbackQuery.id);
@@ -1863,12 +1986,31 @@ const handleCallbackQuery = async (callbackQuery) => {
 };
 
 const handleUpdate = async (update) => {
+  if (update.pre_checkout_query) {
+    await callTelegram('answerPreCheckoutQuery', {
+      pre_checkout_query_id: update.pre_checkout_query.id,
+      ok: true
+    });
+    return;
+  }
+
   if (update.callback_query) {
     await handleCallbackQuery(update.callback_query);
     return;
   }
 
   const message = update.message;
+
+  if (message?.successful_payment) {
+    await ensurePlayerRegistered(message.from);
+    const result = await callApi(`/api/player/${message.from.id}/gamepass/activate`, { method: 'POST' });
+    await sendMessage(
+      message.chat.id,
+      `🎉 GamePass активовано до ${formatDate(result.premiumUntil)}!\n+${result.bonusClaims - (result.bonusClaims - 5)} 🎫 спроб нараховано.`
+    );
+    return;
+  }
+
   if (!message || !message.text || !message.from) {
     console.log('[update] skipped (no text/from):', JSON.stringify(update));
     return;
@@ -1901,6 +2043,21 @@ const handleUpdate = async (update) => {
       return;
     }
 
+    if (startParam.startsWith('ref_')) {
+      const inviterTelegramId = startParam.replace('ref_', '');
+      const result = await callApi(`/api/player/${inviterTelegramId}/referrals/register`, {
+        method: 'POST',
+        body: JSON.stringify({ inviteeTelegramId: String(message.from.id) })
+      });
+
+      await sendMessage(
+        chatId,
+        'Вітаю в ShadowMania! Натисни кнопку нижче, щоб отримати свою першу карту.',
+        { reply_markup: mainKeyboard }
+      );
+      return;
+    }
+
     await sendMessage(
       chatId,
       'Вітаю в ShadowMania! Натисни кнопку нижче, щоб отримати свою першу карту.',
@@ -1930,6 +2087,12 @@ const handleUpdate = async (update) => {
   if (text === MENU_BUTTON_TEXT || text === '/menu') {
     await ensurePlayerRegistered(message.from);
     await handleMenu(chatId, message.from);
+    return;
+  }
+
+  if (text === '/referrals') {
+    await ensurePlayerRegistered(message.from);
+    await handleReferrals(chatId, null, message.from);
     return;
   }
 

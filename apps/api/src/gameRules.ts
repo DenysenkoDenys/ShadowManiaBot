@@ -1,4 +1,5 @@
-export const ARENA_COOLDOWN_MS = 30 * 60 * 1000;
+export const ARENA_COOLDOWN_MS = 2 * 60 * 60 * 1000; 
+export const ARENA_COOLDOWN_PREMIUM_MS = 60 * 60 * 1000; 
 export const ARENA_TEAM_SIZE = 5;
 export const ARENA_RATING_K = 24;
 export const ARENA_WIN_DUST = { min: 20, max: 50 };
@@ -15,6 +16,19 @@ export const getClanMaxMembers = (level: number): number => CLAN_BASE_MAX_MEMBER
 export const getClanLevelUpCost = (level: number): number => level * CLAN_LEVEL_UP_BASE_COST;
 
 export const CLAN_CREATION_COST = 100_000;
+export const GAME_PASS_COST_STARS = 100;
+export const GAME_PASS_DURATION_DAYS = 30;
+export const GAME_PASS_BONUS_CLAIMS_REWARD = 5;
+
+export const REFERRAL_DAILY_LIMIT = 50;
+export const REFERRAL_REWARD_BONUS_CLAIMS = 4;
+export const REFERRAL_REWARD_GAME_PASS_DAYS = 1;
+
+export const GAME_PASS_RARITY_WEIGHT_MULTIPLIER: Partial<Record<RarityKey, number>> = {
+  epic: 1.5,
+  legendary: 2,
+  mythic: 2.5
+};
 
 export const CLAN_ROLE_LABELS: Record<string, string> = {
   LEADER: '👑 Глава',
@@ -157,6 +171,7 @@ export const designPillars = [
 ] as const;
 
 export const CARD_CLAIM_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+export const CARD_CLAIM_COOLDOWN_PREMIUM_MS = 1 * 60 * 60 * 1000;
 
 export const rarityConfig = {
   common: { label: 'Звичайна', weight: 45, points: 100, dustMin: 20, dustMax: 40 },

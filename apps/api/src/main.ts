@@ -1,6 +1,8 @@
 import './loadEnv.js';
 import Fastify from 'fastify';
 import { getBonusesStatus, claimBonusMilestone } from './bonusesService.js';
+import { getGamePassStatus, activateGamePass } from './gamePassService.js';
+import { getReferralStatus, registerReferral } from './referralService.js';
 import { addCard, addClan, addSeason, getDashboardSnapshot, listCards, listClans, listPacks, listSeasons } from './contentStore.js';
 import { claimDailyReward, getPlayerProfile, upsertPlayerProfile } from './playerStore.js';
 import { claimCard, getClaimCooldown, getPlayerCollection, getPlayerChronicles } from './cardService.js';
@@ -508,6 +510,50 @@ server.post('/api/player/:telegramId/bonuses/:threshold/claim', async (request, 
   if (!result) {
     reply.code(404);
     return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.get('/api/player/:telegramId/gamepass', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const status = await getGamePassStatus(params.telegramId);
+  if (!status) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return status;
+});
+
+server.post('/api/player/:telegramId/gamepass/activate', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const result = await activateGamePass(params.telegramId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Player not found' };
+  }
+  return result;
+});
+
+server.get('/api/player/:telegramId/referrals', async (request) => {
+  const params = request.params as { telegramId: string };
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? 'ShadowManiaBot';
+  const status = await getReferralStatus(params.telegramId, botUsername);
+  return status ?? { error: 'Player not found' };
+});
+
+server.post('/api/player/:telegramId/referrals/register', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { inviteeTelegramId?: string };
+
+  if (!body.inviteeTelegramId) {
+    reply.code(400);
+    return { error: 'inviteeTelegramId is required' };
+  }
+
+  const result = await registerReferral(params.telegramId, body.inviteeTelegramId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Inviter not found' };
   }
   return result;
 });

@@ -9,7 +9,8 @@ import {
     ARENA_LOSS_DUST,
     ARENA_WIN_POINTS,
     ARENA_LOSS_POINTS,
-    ARENA_PVP_CHANCE
+    ARENA_PVP_CHANCE,
+    ARENA_COOLDOWN_PREMIUM_MS
 } from './gameRules.js';
 
 const randomInRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -258,11 +259,14 @@ export const searchAndFight = async (telegramId: string): Promise<ArenaSearchRes
         create: { telegramId, displayName: `Player ${telegramId}` }
     });
 
+    const isPremium = Boolean(user.premiumUntil && user.premiumUntil.getTime() > now);
+    const activeArenaCooldownMs = isPremium ? ARENA_COOLDOWN_PREMIUM_MS : ARENA_COOLDOWN_MS;
+
     const lastBattleAt = user.lastArenaBattleAt;
-    const onCooldown = lastBattleAt !== null && now - lastBattleAt.getTime() < ARENA_COOLDOWN_MS;
+    const onCooldown = lastBattleAt !== null && now - lastBattleAt.getTime() < activeArenaCooldownMs;
     if (onCooldown) {
         const elapsed = now - (lastBattleAt as Date).getTime();
-        return { status: 'cooldown', remainingMs: ARENA_COOLDOWN_MS - elapsed };
+        return { status: 'cooldown', remainingMs: activeArenaCooldownMs - elapsed };
     }
 
     const team = await getTeamView(telegramId);
@@ -358,8 +362,11 @@ export const getArenaStatus = async (telegramId: string): Promise<{ remainingMs:
     const user = await prisma.user.findUnique({ where: { telegramId } });
     if (!user) return { remainingMs: 0, rating: 1000 };
 
+    const isPremium = Boolean(user.premiumUntil && user.premiumUntil.getTime() > now);
+    const activeArenaCooldownMs = isPremium ? ARENA_COOLDOWN_PREMIUM_MS : ARENA_COOLDOWN_MS;
+
     const lastBattleAt = user.lastArenaBattleAt;
-    const remainingMs = lastBattleAt ? Math.max(0, ARENA_COOLDOWN_MS - (now - lastBattleAt.getTime())) : 0;
+    const remainingMs = lastBattleAt ? Math.max(0, activeArenaCooldownMs - (now - lastBattleAt.getTime())) : 0;
     return { remainingMs, rating: user.arenaRating };
 };
 

@@ -72,6 +72,8 @@ model User {
   arenaTimerNotified Boolean @default(false)
   bonusMilestoneClaims BonusMilestoneClaim[]
   questProgress QuestProgress[]
+  referredBy         String?
+  referralsAsInviter Referral[] @relation("Inviter")
   shards Int @default(0)
   craftLocked Boolean @default(false)
   lastArenaBattleLog  Json?
@@ -292,4 +294,12 @@ model BonusMilestoneClaim {
   user      User     @relation(fields: [userId], references: [id])
 
   @@unique([userId, threshold])
+}
+
+model Referral {
+  id          String   @id @default(cuid())
+  inviterId   String
+  inviteeId   String   @unique
+  createdAt   DateTime @default(now())
+  inviter     User     @relation("Inviter", fields: [inviterId], references: [id])
 }

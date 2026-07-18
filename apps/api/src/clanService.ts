@@ -126,14 +126,18 @@ export const createClan = async (telegramId: string, name: string, tag: string):
     });
     if (nameTaken) return { status: 'name-taken' };
 
-    if (user.dustBalance < CLAN_CREATION_COST) {
-        return { status: 'not-enough-dust', required: CLAN_CREATION_COST, have: user.dustBalance };
-    }
+    const isPremium = Boolean(user.premiumUntil && user.premiumUntil.getTime() > Date.now());
 
-    await prisma.user.update({
-        where: { id: user.id },
-        data: { dustBalance: { decrement: CLAN_CREATION_COST } }
-    });
+    if (!isPremium) {
+        if (user.dustBalance < CLAN_CREATION_COST) {
+            return { status: 'not-enough-dust', required: CLAN_CREATION_COST, have: user.dustBalance };
+        }
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { dustBalance: { decrement: CLAN_CREATION_COST } }
+        });
+    }
 
     const clan = await prisma.clan.create({
         data: { name, tag, description: `Клан заснований гравцем ${user.displayName}` }
@@ -251,161 +255,161 @@ export const getClanArenaBonus = async (telegramId: string): Promise<{ attack: n
 
 
 export type ClanDetailsView = MyClanView & {
-  level: number;
-  levelUpCost: number;
-  raidsCount: number;
+    level: number;
+    levelUpCost: number;
+    raidsCount: number;
 };
 
 export const getMyClanDetails = async (telegramId: string): Promise<ClanDetailsView | null> => {
-  const base = await getMyClan(telegramId);
-  if (!base) return null;
+    const base = await getMyClan(telegramId);
+    if (!base) return null;
 
-  const prisma = getPrisma();
-  if (!prisma) return { ...base, level: 1, levelUpCost: getClanLevelUpCost(1), raidsCount: 0 };
+    const prisma = getPrisma();
+    if (!prisma) return { ...base, level: 1, levelUpCost: getClanLevelUpCost(1), raidsCount: 0 };
 
-  const clan = await prisma.clan.findUnique({
-    where: { id: base.id },
-    include: { members: { include: { user: true } } }
-  });
-  if (!clan) return { ...base, level: 1, levelUpCost: getClanLevelUpCost(1), raidsCount: 0 };
+    const clan = await prisma.clan.findUnique({
+        where: { id: base.id },
+        include: { members: { include: { user: true } } }
+    });
+    if (!clan) return { ...base, level: 1, levelUpCost: getClanLevelUpCost(1), raidsCount: 0 };
 
-  const raidsCount = clan.members.reduce((sum: number, m: any) => sum + m.user.arenaWins + m.user.arenaLosses, 0);
+    const raidsCount = clan.members.reduce((sum: number, m: any) => sum + m.user.arenaWins + m.user.arenaLosses, 0);
 
-  return { ...base, level: clan.level, levelUpCost: getClanLevelUpCost(clan.level), raidsCount };
+    return { ...base, level: clan.level, levelUpCost: getClanLevelUpCost(clan.level), raidsCount };
 };
 
 export type ClanAdminResult =
-  | { status: 'ok' }
-  | { status: 'not-leader' }
-  | { status: 'not-enough-dust'; required: number; have: number };
+    | { status: 'ok' }
+    | { status: 'not-leader' }
+    | { status: 'not-enough-dust'; required: number; have: number };
 
 export const updateClanDescription = async (telegramId: string, description: string): Promise<ClanAdminResult | null> => {
-  const prisma = getPrisma();
-  if (!prisma) return null;
+    const prisma = getPrisma();
+    if (!prisma) return null;
 
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-  if (!user) return null;
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return null;
 
-  const membership = await prisma.clanMember.findFirst({ where: { userId: user.id } });
-  if (!membership || membership.role !== 'LEADER') return { status: 'not-leader' };
+    const membership = await prisma.clanMember.findFirst({ where: { userId: user.id } });
+    if (!membership || membership.role !== 'LEADER') return { status: 'not-leader' };
 
-  await prisma.clan.update({ where: { id: membership.clanId }, data: { description: description.slice(0, 300) } });
-  return { status: 'ok' };
+    await prisma.clan.update({ where: { id: membership.clanId }, data: { description: description.slice(0, 300) } });
+    return { status: 'ok' };
 };
 
 export const levelUpClan = async (telegramId: string): Promise<ClanAdminResult | null> => {
-  const prisma = getPrisma();
-  if (!prisma) return null;
+    const prisma = getPrisma();
+    if (!prisma) return null;
 
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-  if (!user) return null;
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return null;
 
-  const membership = await prisma.clanMember.findFirst({ where: { userId: user.id }, include: { clan: true } });
-  if (!membership || membership.role !== 'LEADER') return { status: 'not-leader' };
+    const membership = await prisma.clanMember.findFirst({ where: { userId: user.id }, include: { clan: true } });
+    if (!membership || membership.role !== 'LEADER') return { status: 'not-leader' };
 
-  const cost = getClanLevelUpCost(membership.clan.level);
-  if (membership.clan.bankDust < cost) {
-    return { status: 'not-enough-dust', required: cost, have: membership.clan.bankDust };
-  }
-
-  const newLevel = membership.clan.level + 1;
-  await prisma.clan.update({
-    where: { id: membership.clanId },
-    data: {
-      level: newLevel,
-      bankDust: { decrement: cost },
-      maxMembers: getClanMaxMembers(newLevel)
+    const cost = getClanLevelUpCost(membership.clan.level);
+    if (membership.clan.bankDust < cost) {
+        return { status: 'not-enough-dust', required: cost, have: membership.clan.bankDust };
     }
-  });
 
-  return { status: 'ok' };
+    const newLevel = membership.clan.level + 1;
+    await prisma.clan.update({
+        where: { id: membership.clanId },
+        data: {
+            level: newLevel,
+            bankDust: { decrement: cost },
+            maxMembers: getClanMaxMembers(newLevel)
+        }
+    });
+
+    return { status: 'ok' };
 };
 
 export const deleteClan = async (telegramId: string): Promise<ClanAdminResult | null> => {
-  const prisma = getPrisma();
-  if (!prisma) return null;
+    const prisma = getPrisma();
+    if (!prisma) return null;
 
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-  if (!user) return null;
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return null;
 
-  const membership = await prisma.clanMember.findFirst({ where: { userId: user.id } });
-  if (!membership || membership.role !== 'LEADER') return { status: 'not-leader' };
+    const membership = await prisma.clanMember.findFirst({ where: { userId: user.id } });
+    if (!membership || membership.role !== 'LEADER') return { status: 'not-leader' };
 
-  await prisma.clanMember.deleteMany({ where: { clanId: membership.clanId } });
-  await prisma.clan.delete({ where: { id: membership.clanId } });
+    await prisma.clanMember.deleteMany({ where: { clanId: membership.clanId } });
+    await prisma.clan.delete({ where: { id: membership.clanId } });
 
-  return { status: 'ok' };
+    return { status: 'ok' };
 };
 
 export type DepositResult =
-  | { status: 'ok'; bankDust: number; dustBalance: number; contributionScore: number }
-  | { status: 'not-in-clan' }
-  | { status: 'not-enough-dust'; required: number; have: number };
+    | { status: 'ok'; bankDust: number; dustBalance: number; contributionScore: number }
+    | { status: 'not-in-clan' }
+    | { status: 'not-enough-dust'; required: number; have: number };
 
 export const depositToClanBank = async (telegramId: string, amount: number): Promise<DepositResult | null> => {
-  const prisma = getPrisma();
-  if (!prisma) return null;
+    const prisma = getPrisma();
+    if (!prisma) return null;
 
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-  if (!user) return null;
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return null;
 
-  const membership = await prisma.clanMember.findFirst({ where: { userId: user.id } });
-  if (!membership) return { status: 'not-in-clan' };
+    const membership = await prisma.clanMember.findFirst({ where: { userId: user.id } });
+    if (!membership) return { status: 'not-in-clan' };
 
-  if (user.dustBalance < amount) {
-    return { status: 'not-enough-dust', required: amount, have: user.dustBalance };
-  }
+    if (user.dustBalance < amount) {
+        return { status: 'not-enough-dust', required: amount, have: user.dustBalance };
+    }
 
-  await prisma.user.update({ where: { id: user.id }, data: { dustBalance: { decrement: amount } } });
-  const updatedClan = await prisma.clan.update({
-    where: { id: membership.clanId },
-    data: { bankDust: { increment: amount } }
-  });
-  const updatedMembership = await prisma.clanMember.update({
-    where: { id: membership.id },
-    data: { contributionScore: { increment: amount } }
-  });
+    await prisma.user.update({ where: { id: user.id }, data: { dustBalance: { decrement: amount } } });
+    const updatedClan = await prisma.clan.update({
+        where: { id: membership.clanId },
+        data: { bankDust: { increment: amount } }
+    });
+    const updatedMembership = await prisma.clanMember.update({
+        where: { id: membership.id },
+        data: { contributionScore: { increment: amount } }
+    });
 
-  const updatedUser = await prisma.user.findUnique({ where: { id: user.id } });
+    const updatedUser = await prisma.user.findUnique({ where: { id: user.id } });
 
-  return {
-    status: 'ok',
-    bankDust: updatedClan.bankDust,
-    dustBalance: updatedUser?.dustBalance ?? 0,
-    contributionScore: updatedMembership.contributionScore
-  };
+    return {
+        status: 'ok',
+        bankDust: updatedClan.bankDust,
+        dustBalance: updatedUser?.dustBalance ?? 0,
+        contributionScore: updatedMembership.contributionScore
+    };
 };
 
 export type ClanRankingItem = {
-  name: string;
-  tag: string;
-  level: number;
-  weeklyScore: number;
-  memberCount: number;
+    name: string;
+    tag: string;
+    level: number;
+    weeklyScore: number;
+    memberCount: number;
 };
 
 export const getClanRanking = async (limit = 10): Promise<ClanRankingItem[]> => {
-  const prisma = getPrisma();
-  if (!prisma) return [];
+    const prisma = getPrisma();
+    if (!prisma) return [];
 
-  const clans = await prisma.clan.findMany({
-    include: { members: true },
-    orderBy: { weeklyScore: 'desc' },
-    take: limit
-  });
+    const clans = await prisma.clan.findMany({
+        include: { members: true },
+        orderBy: { weeklyScore: 'desc' },
+        take: limit
+    });
 
-  return clans.map((clan: any) => ({
-    name: clan.name,
-    tag: clan.tag,
-    level: clan.level,
-    weeklyScore: clan.weeklyScore,
-    memberCount: clan.members.length
-  }));
+    return clans.map((clan: any) => ({
+        name: clan.name,
+        tag: clan.tag,
+        level: clan.level,
+        weeklyScore: clan.weeklyScore,
+        memberCount: clan.members.length
+    }));
 };
 
 export const getClanByInviteId = async (clanId: string): Promise<{ name: string; tag: string } | null> => {
-  const prisma = getPrisma();
-  if (!prisma) return null;
-  const clan = await prisma.clan.findUnique({ where: { id: clanId } });
-  return clan ? { name: clan.name, tag: clan.tag } : null;
+    const prisma = getPrisma();
+    if (!prisma) return null;
+    const clan = await prisma.clan.findUnique({ where: { id: clanId } });
+    return clan ? { name: clan.name, tag: clan.tag } : null;
 };

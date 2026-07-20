@@ -2,6 +2,9 @@ import './loadEnv.js';
 import Fastify from 'fastify';
 import { getBonusesStatus, claimBonusMilestone } from './bonusesService.js';
 import { getGamePassStatus, activateGamePass } from './gamePassService.js';
+import { getLocationsMap, raidLocation } from './raidService.js';
+import { startTerritoryScheduler } from './territoryScheduler.js';
+import { getClanMemberTelegramIds, getOrCreateClanQuest } from './clanService.js';
 import { getReferralStatus, registerReferral } from './referralService.js';
 import { addCard, addClan, addSeason, getDashboardSnapshot, listCards, listClans, listPacks, listSeasons } from './contentStore.js';
 import { claimDailyReward, getPlayerProfile, upsertPlayerProfile } from './playerStore.js';
@@ -43,6 +46,29 @@ import {
 } from './gameRules.js';
 
 const server = Fastify({ logger: true });
+
+server.get('/api/map', async () => ({ locations: await getLocationsMap() }));
+
+server.post('/api/player/:telegramId/raid/:locationId', async (request, reply) => {
+  const params = request.params as { telegramId: string; locationId: string };
+  const result = await raidLocation(params.telegramId, params.locationId);
+  if (!result) {
+    reply.code(404);
+    return { error: 'Not found' };
+  }
+  return result;
+});
+
+server.get('/api/player/:telegramId/clan/broadcast-targets', async (request) => {
+  const params = request.params as { telegramId: string };
+  const ids = await getClanMemberTelegramIds(params.telegramId);
+  return { targetTelegramIds: ids ?? [] };
+});
+
+server.get('/api/player/:telegramId/clan/quest', async (request) => {
+  const params = request.params as { telegramId: string };
+  return { quest: await getOrCreateClanQuest(params.telegramId) };
+});
 
 server.get('/health', async () => ({ status: 'ok' }));
 
@@ -616,5 +642,6 @@ process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
 
 startNotificationScheduler();
+startTerritoryScheduler();
 
 void start();

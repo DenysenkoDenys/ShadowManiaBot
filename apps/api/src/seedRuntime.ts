@@ -2,6 +2,23 @@ import { seedCards, seedCardSets, seedClans, seedSeasons } from './seedData.js';
 
 const seedReady = new WeakSet<object>();
 
+const seedLocations = [
+  { name: 'Землі Вогню', emoji: '🔥', maxHp: 1_000_000 },
+  { name: 'Землі Вітрів', emoji: '🌬️', maxHp: 1_000_000 },
+  { name: 'Чорні Води', emoji: '🌊', maxHp: 1_000_000 },
+  { name: 'Таємні Землі', emoji: '🌲', maxHp: 1_000_000 }
+];
+
+const ensureLocationsSeeded = async (prisma: any) => {
+  for (const loc of seedLocations) {
+    await prisma.location.upsert({
+      where: { name: loc.name },
+      update: {},
+      create: { name: loc.name, emoji: loc.emoji, maxHp: loc.maxHp, currentHp: loc.maxHp }
+    });
+  }
+};
+
 export const ensureSeedWorld = async (prisma: any) => {
   if (seedReady.has(prisma)) {
     return;
@@ -92,6 +109,8 @@ export const ensureSeedWorld = async (prisma: any) => {
       }
     });
   }
+
+  await ensureLocationsSeeded(prisma);
 
   seedReady.add(prisma);
 };

@@ -53,6 +53,81 @@ export type MyClanView = {
     members: ClanMemberView[];
 };
 
+export type BroadcastResult = { status: 'ok'; recipientCount: number } | { status: 'not-leader' };
+
+export const getClanMemberTelegramIds = async (telegramId: string): Promise<string[] | null> => {
+    const prisma = getPrisma();
+    if (!prisma) return null;
+
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return null;
+
+    const membership = await prisma.clanMember.findFirst({
+        where: { userId: user.id },
+        include: { clan: { include: { members: { include: { user: true } } } } }
+    });
+    if (!membership || membership.role !== 'LEADER') return null;
+
+    return membership.clan.members.map((m: any) => m.user.telegramId).filter((id: string) => id !== telegramId);
+};
+
+export type ClanQuestView = { title: string; progress: number; target: number; completed: boolean; rewardText: string };
+
+export const getOrCreateClanQuest = async (telegramId: string): Promise<ClanQuestView | null> => {
+    const prisma = getPrisma();
+    if (!prisma) return null;
+
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return null;
+
+    const membership = await prisma.clanMember.findFirst({ where: { userId: user.id } });
+    if (!membership) return null;
+
+    let quest = await prisma.clanQuest.findFirst({ where: { clanId: membership.clanId, completedAt: null } });
+    if (!quest) {
+        quest = await prisma.clanQuest.create({
+            data: {
+                clanId: membership.clanId,
+                title: 'Здобудьте разом 500 карток',
+                type: 'CARDS',
+                target: 500,
+                rewardText: '+50 000 коінів у казну клану'
+            }
+        });
+    }
+
+    return {
+        title: quest.title,
+        progress: quest.progress,
+        target: quest.target,
+        completed: Boolean(quest.completedAt),
+        rewardText: quest.rewardText
+    };
+};
+
+export const incrementClanQuestProgress = async (userId: string, amount = 1): Promise<void> => {
+    const prisma = getPrisma();
+    if (!prisma) return;
+
+    const membership = await prisma.clanMember.findFirst({ where: { userId } });
+    if (!membership) return;
+
+    const quest = await prisma.clanQuest.findFirst({ where: { clanId: membership.clanId, completedAt: null } });
+    if (!quest) return;
+
+    const newProgress = Math.min(quest.target, quest.progress + amount);
+    const justCompleted = newProgress >= quest.target && !quest.completedAt;
+
+    await prisma.clanQuest.update({
+        where: { id: quest.id },
+        data: { progress: newProgress, completedAt: justCompleted ? new Date() : undefined }
+    });
+
+    if (justCompleted) {
+        await prisma.clan.update({ where: { id: membership.clanId }, data: { bankDust: { increment: 50_000 } } });
+    }
+};
+
 export const getMyClan = async (telegramId: string): Promise<MyClanView | null> => {
     const prisma = getPrisma();
     if (!prisma) return null;

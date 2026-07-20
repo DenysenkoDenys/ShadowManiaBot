@@ -24,6 +24,10 @@ export const REFERRAL_DAILY_LIMIT = 50;
 export const REFERRAL_REWARD_BONUS_CLAIMS = 4;
 export const REFERRAL_REWARD_GAME_PASS_DAYS = 1;
 
+export const RAID_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+export const TERRITORY_PAYOUT_INTERVAL_MS = 2 * 60 * 60 * 1000;
+export const TERRITORY_PAYOUT_BONUS_CLAIMS = 1;
+
 export const GAME_PASS_RARITY_WEIGHT_MULTIPLIER: Partial<Record<RarityKey, number>> = {
   epic: 1.5,
   legendary: 2,

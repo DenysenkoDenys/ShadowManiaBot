@@ -71,6 +71,7 @@ model User {
   cardTimerNotified  Boolean @default(false)
   arenaTimerNotified Boolean @default(false)
   bonusMilestoneClaims BonusMilestoneClaim[]
+  lastRaidAt DateTime?
   questProgress QuestProgress[]
   referredBy         String?
   referralsAsInviter Referral[] @relation("Inviter")
@@ -171,6 +172,7 @@ model Clan {
   seasonId    String?
   weeklyScore Int                  @default(0)
   totalCards  Int                  @default(0)
+  locations Location[]
   bankDust    Int                  @default(0)
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
@@ -220,6 +222,7 @@ model ClanQuest {
   id          String    @id @default(cuid())
   clanId      String
   title       String
+  type        String    @default("CARDS")
   progress    Int       @default(0)
   target      Int       @default(1)
   rewardText  String
@@ -302,4 +305,16 @@ model Referral {
   inviteeId   String   @unique
   createdAt   DateTime @default(now())
   inviter     User     @relation("Inviter", fields: [inviterId], references: [id])
+}
+
+model Location {
+  id                String    @id @default(cuid())
+  name              String    @unique
+  emoji             String
+  maxHp             Int
+  currentHp         Int
+  controllingClanId String?
+  lastPayoutAt      DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  controllingClan   Clan?     @relation(fields: [controllingClanId], references: [id])
 }

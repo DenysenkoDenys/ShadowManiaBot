@@ -5,6 +5,7 @@ import type { CardInstance } from '@prisma/client';
 import { getPrisma } from './prismaClient.js';
 import { incrementQuestProgress } from './questService.js';
 import { SHARD_REWARD_RANGE_BY_RARITY } from './gameRules.js';
+import { incrementClanQuestProgress } from './clanService.js';
 
 export type ClaimedCardView = {
   name: string;
@@ -168,6 +169,7 @@ export const claimCard = async (telegramId: string): Promise<ClaimResult> => {
     }
 
     await incrementQuestProgress(telegramId, 'claim_cards', 1);
+    await incrementClanQuestProgress(user.id, 1);
     if (!existingInstance) {
       await incrementQuestProgress(telegramId, 'new_cards', 1);
     }

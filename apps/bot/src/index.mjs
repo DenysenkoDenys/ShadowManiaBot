@@ -118,6 +118,67 @@ const formatProgressBar = (percent, length = 15) => {
   return '█'.repeat(filled) + '░'.repeat(length - filled);
 };
 
+const formatProgressBarBig = (current, max, length = 12) => {
+  const percent = Math.min(1, current / max);
+  const filled = Math.round(percent * length);
+  return '█'.repeat(filled) + '░'.repeat(length - filled);
+};
+
+const formatMapMessage = (locations) => {
+  const lines = [
+    '🗺 Карта локацій:',
+    '⚔️ +1 🎫 спроба кожні 2 години за контрольовану 🌍 локацію.',
+    ''
+  ];
+
+  for (const loc of locations) {
+    const owner = loc.controllingClanName ? `${loc.controllingClanName} | ${loc.controllingClanLeader}` : 'Нічия';
+    lines.push(`${loc.name} ${loc.emoji} | ${owner}`);
+    lines.push(`❤️ ${formatProgressBarBig(loc.currentHp, loc.maxHp)}`);
+    lines.push(`${loc.currentHp.toLocaleString('uk-UA')}/${loc.maxHp.toLocaleString('uk-UA')}`);
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+};
+
+const buildMapKeyboard = (locations) => ({
+  inline_keyboard: [
+    ...locations.map((loc) => [{ text: `⚔️ Рейд на ${loc.name} ${loc.emoji}`, callback_data: `raid:go:${loc.id}` }]),
+    [{ text: '🔙 До клану', callback_data: 'menu:clan' }]
+  ]
+});
+
+const handleMap = async (chatId, messageId, from) => {
+  const { locations } = await callApi('/api/map');
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatMapMessage(locations), { reply_markup: buildMapKeyboard(locations) });
+};
+
+const handleRaid = async (chatId, from, locationId, callbackQueryId) => {
+  const result = await callApi(`/api/player/${from.id}/raid/${locationId}`, { method: 'POST' });
+
+  if (result.status === 'cooldown') {
+    await answerCallbackQuery(callbackQueryId, { text: `⏳ Наступний рейд через ${formatDuration(result.remainingMs)}`, showAlert: true });
+    return;
+  }
+  if (result.status === 'no-clan') {
+    await answerCallbackQuery(callbackQueryId, { text: '❌ Спочатку вступи до клану.', showAlert: true });
+    return;
+  }
+  if (result.status === 'own-territory') {
+    await answerCallbackQuery(callbackQueryId, { text: '❌ Це вже твоя територія.', showAlert: true });
+    return;
+  }
+
+  const text = result.captured
+    ? `🏴 Захоплено! ${result.locationName} тепер під контролем твого клану!`
+    : `⚔️ Завдано ${result.damage.toLocaleString('uk-UA')} шкоди. Залишилось ${result.remainingHp.toLocaleString('uk-UA')} HP.`;
+
+  await answerCallbackQuery(callbackQueryId, { text, showAlert: true });
+  await handleMap(chatId, null, from);
+};
+
 const formatArenaHomeMessage = (displayName, team) => {
   const filled = team.slots.filter(Boolean);
   const lines = [
@@ -181,6 +242,7 @@ const buildMyClanKeyboard = (clan) => {
     rows.push([{ text: '📝 Редагувати опис', callback_data: 'clan:desc:prompt' }]);
     rows.push([{ text: '⬆️ Підняти рівень клану', callback_data: 'clan:levelup' }]);
     rows.push([{ text: '⚙️ Управління ролями', callback_data: 'clan:roles' }]);
+    rows.push([{ text: '📢 Розсилка учасникам', callback_data: 'clan:broadcast:prompt' }]);
     rows.push([{ text: '🗑 Видалити клан', callback_data: 'clan:delete:confirm' }]);
   }
 
@@ -188,6 +250,8 @@ const buildMyClanKeyboard = (clan) => {
   rows.push([{ text: '🏆 Рейтинг кланів', callback_data: 'clan:ranking' }]);
   rows.push([{ text: '🌍 Поповнити казну', callback_data: 'clan:deposit:prompt' }]);
   rows.push([{ text: '📊 Внески клану', callback_data: 'clan:contributions' }]);
+  rows.push([{ text: '🗺 Карта (рейди)', callback_data: 'clan:map' }]);
+  rows.push([{ text: '🎯 Клан-квест', callback_data: 'clan:quest' }]);
   rows.push([{ text: '🚪 Покинути клан', callback_data: 'clan:leave:confirm' }]);
   rows.push([{ text: '🔙 До меню', callback_data: 'menu:back' }]);
 
@@ -588,6 +652,31 @@ const handleClanCreatePrompt = async (chatId, messageId, from) => {
   );
 };
 
+const handleClanBroadcastPrompt = async (chatId, from) => {
+  await sendMessage(chatId, 'Введи текст розсилки так:\n/clan_announce Текст повідомлення');
+};
+
+const handleClanAnnounceCommand = async (chatId, from, rawText) => {
+  const text = rawText.replace('/clan_announce', '').trim();
+  if (!text) {
+    await sendMessage(chatId, 'Введи текст після команди. Приклад: /clan_announce Сьогодні рейд о 20:00!');
+    return;
+  }
+
+  const { targetTelegramIds } = await callApi(`/api/player/${from.id}/clan/broadcast-targets`);
+
+  if (targetTelegramIds.length === 0) {
+    await sendMessage(chatId, '❌ Тільки глава клану може робити розсилку.');
+    return;
+  }
+
+  for (const targetId of targetTelegramIds) {
+    await sendMessage(targetId, `📢 Оголошення від глави клану:\n\n${text}`);
+  }
+
+  await sendMessage(chatId, `✅ Розсилку надіслано ${targetTelegramIds.length} учасникам.`);
+};
+
 const handleCreateClanCommand = async (chatId, from, rawText) => {
   const payload = rawText.replace('/create_clan', '').trim();
   const [name, tag] = payload.split('|').map((part) => part?.trim());
@@ -702,6 +791,21 @@ const handleClanSetRole = async (chatId, messageId, from, targetTelegramId, role
   if (messageId) await deleteMessage(chatId, messageId);
   await sendMessage(chatId, messages[result.status] ?? '❌ Сталася помилка.');
   await handleClan(chatId, null, from);
+};
+
+const handleClanQuest = async (chatId, messageId, from) => {
+  const { quest } = await callApi(`/api/player/${from.id}/clan/quest`);
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  if (!quest) {
+    await sendMessage(chatId, '❌ Ти не в клані.');
+    return;
+  }
+
+  const status = quest.completed ? '✅ Виконано!' : `${quest.progress}/${quest.target}`;
+  await sendMessage(chatId, `🎯 ${quest.title}\n\n${status}\n🎁 Нагорода: ${quest.rewardText}`, {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 До клану', callback_data: 'menu:clan' }]] }
+  });
 };
 
 const formatTeamBuilderMessage = (card, index, total) =>
@@ -1749,6 +1853,30 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
+    if (data === 'menu:map' || data === 'clan:map') {
+      await handleMap(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:quest') {
+      await handleClanQuest(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'clan:broadcast:prompt') {
+      await handleClanBroadcastPrompt(chatId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const raidMatch = data.match(/^raid:go:(.+)$/);
+    if (raidMatch) {
+      await handleRaid(chatId, from, raidMatch[1], callbackQuery.id);
+      return;
+    }
+
     const bonusClaimMatch = data.match(/^bonus:claim:(\d+)$/);
     if (bonusClaimMatch) {
       await handleBonusClaim(chatId, from, messageId, Number(bonusClaimMatch[1]), callbackQuery.id);
@@ -2055,6 +2183,12 @@ const handleUpdate = async (update) => {
         'Вітаю в ShadowMania! Натисни кнопку нижче, щоб отримати свою першу карту.',
         { reply_markup: mainKeyboard }
       );
+      return;
+    }
+
+    if (text.startsWith('/clan_announce')) {
+      await ensurePlayerRegistered(message.from);
+      await handleClanAnnounceCommand(chatId, message.from, text);
       return;
     }
 

@@ -65,7 +65,29 @@ const RARITY_LABELS = {
   mythic: 'Міфічна'
 };
 
+const groupGames = new Map();
+const GROUP_GAME_DURATION_MS = 30 * 1000;
+const GROUP_GAME_COOLDOWN_MS = 5 * 60 * 1000;
+const GROUP_GAME_REWARD_SHARDS = 5;
 
+const groupGameCooldowns = new Map();
+
+const GROUP_COMMANDS = {
+  'отримати карту': 'card',
+  'команда': 'team',
+  'гра': 'game',
+  'мем': 'meme'
+};
+
+const normalizeGroupText = (text) => text.trim().toLowerCase();
+
+const UKRAINIAN_MEMES = [
+  '😂 Купив собі PlayStation. Тепер у мене є два безробітні в хаті.',
+  '🐈 Кіт: я не сплю, я медитую з зачиненими очима.',
+  '☕ Ранкова кава — це не залежність, це ритуал виживання.',
+  '📦 Замовив щось на Розетці. Тепер моя робота — чекати кур\'єра.',
+  '🧦 Одна шкарпетка завжди зникає в пральній машині. Ми навіть не питаємо чому.'
+];
 
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
 
@@ -179,6 +201,85 @@ const handleRaid = async (chatId, from, locationId, callbackQueryId) => {
   await handleMap(chatId, null, from);
 };
 
+const buildRatingHomeKeyboard = () => ({
+  inline_keyboard: [
+    [{ text: '📈 За сезон', callback_data: 'rating:season' }, { text: '🏆 За весь час', callback_data: 'rating:alltime' }],
+    [{ text: '⚔️ Арена', callback_data: 'rating:arena' }, { text: '👥 Реферали', callback_data: 'rating:referrals' }],
+    [{ text: '🔮 Здобутки минулого сезону', callback_data: 'rating:lastseason' }],
+    [{ text: '🔙 Назад', callback_data: 'menu:back' }]
+  ]
+});
+
+const handleRatingHome = async (chatId, messageId, from) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  const text = [
+    `🏅 ${displayName}, обери рейтинг для перегляду`,
+    '',
+    '🎓 Всесвіт: 🧑‍🎓 Моя Академія Героїв'
+  ].join('\n');
+
+  await sendMessage(chatId, text, { reply_markup: buildRatingHomeKeyboard() });
+};
+
+const RATING_TITLES = {
+  season: '📈 Рейтинг за сезон (очки)',
+  alltime: '🏆 Рейтинг за весь час (отримано карток)',
+  arena: '⚔️ Рейтинг арени',
+  referrals: '👥 Рейтинг рефералів'
+};
+
+const RATING_VALUE_SUFFIX = {
+  season: 'pts',
+  alltime: 'карт',
+  arena: '',
+  referrals: 'запрошено'
+};
+
+const formatRatingListMessage = (kind, ranking) => {
+  const title = RATING_TITLES[kind] ?? 'Рейтинг';
+
+  if (ranking.length === 0) {
+    return `${title}\n\nПоки що тут порожньо.`;
+  }
+
+  const medals = ['🥇', '🥈', '🥉'];
+  const lines = [title, ''];
+
+  if (kind === 'alltime') {
+    ranking.forEach((entry) => {
+      const medal = medals[entry.rank - 1] ?? `${entry.rank}.`;
+      lines.push(`${medal} ${entry.displayName} — ${entry.totalCardClaims.toLocaleString('uk-UA')} карт, ${entry.universePoints.toLocaleString('uk-UA')} pts`);
+    });
+    return lines.join('\n');
+  }
+
+  const suffix = RATING_VALUE_SUFFIX[kind] ?? '';
+  ranking.forEach((entry) => {
+    const medal = medals[entry.rank - 1] ?? `${entry.rank}.`;
+    lines.push(`${medal} ${entry.displayName} — ${entry.value.toLocaleString('uk-UA')} ${suffix}`.trim());
+  });
+
+  return lines.join('\n');
+};
+const handleRatingList = async (chatId, messageId, from, kind) => {
+  const { ranking } = await callApi(`/api/ratings/${kind}`);
+  if (messageId) await deleteMessage(chatId, messageId);
+
+  await sendMessage(chatId, formatRatingListMessage(kind, ranking), {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 До рейтингів', callback_data: 'menu:rating' }]] }
+  });
+};
+
+const handleRatingLastSeason = async (chatId, messageId, from) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(
+    chatId,
+    '🔮 Здобутки минулого сезону\n\nСистема сезонних циклів (з завершенням і скиданням рейтингу) ще в розробці. Слідкуй за оновленнями в 📜 Хроніках!',
+    { reply_markup: { inline_keyboard: [[{ text: '🔙 До рейтингів', callback_data: 'menu:rating' }]] } }
+  );
+};
 const formatArenaHomeMessage = (displayName, team) => {
   const filled = team.slots.filter(Boolean);
   const lines = [
@@ -258,6 +359,151 @@ const buildMyClanKeyboard = (clan) => {
   return { inline_keyboard: rows };
 };
 
+const buildHelpHomeKeyboard = () => {
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? 'ShadowManiaBot';
+
+  return {
+    inline_keyboard: [
+      [{ text: '🤖 Додати бота в чат', url: `https://t.me/${botUsername}?startgroup=true` }],
+      [{ text: '❓ Ресурси', callback_data: 'help:resources' }, { text: '❓ Арена', callback_data: 'help:arena' }],
+      [{ text: '❓ Сезони', callback_data: 'help:seasons' }, { text: '❓ Правила', callback_data: 'help:rules' }],
+      [{ text: '❓ Клани', callback_data: 'help:clans' }, { text: '❓ Поради', callback_data: 'help:tips' }],
+      [{ text: '🔙 Назад', callback_data: 'menu:back' }]
+    ]
+  };
+};
+
+const HELP_HOME_TEXT = [
+  '❓ Допомога',
+  '',
+  'Ласкаво просимо до ShadowMania! Обери розділ нижче, щоб дізнатись більше про гру.',
+  '',
+  '🎫 "Отримати карту" — здобудь нову картку (кулдаун 3 год, 2 год з GamePass).',
+  '🗃️ "Мої карти" — переглянь свою колекцію.',
+  '📋 "Меню" — доступ до арени, магазину, крафту, клану та інших розділів.'
+].join('\n');
+
+const HELP_SECTIONS = {
+  resources: [
+    '❓ Ресурси',
+    '',
+    '🪙 Коіни — витратна валюта. Отримуєш за картки та бої, витрачаєш у Магазині.',
+    '⭐ Очки сезону — накопичувальний рейтинг, впливає на місце в 🏅 Рейтингу.',
+    '🎟 Спроби — дозволяють отримати картку без очікування кулдауну.',
+    '🛡 Уламки — отримуєш за повторки карток, обмінюються на спроби в ⚒ Крафті.',
+    '🔑 GamePass — прискорює кулдауни та підвищує шанси на рідкісні картки.'
+  ].join('\n'),
+
+  arena: [
+    '❓ Арена',
+    '',
+    '1️⃣ Збери команду з 5 карток у "🏰 Клан → 🗺" або напряму в 🏟 Арена → 🔴 Команда.',
+    '2️⃣ Натисни "🔍 Пошук суперника" — бот знайде бота-АІ або реального гравця схожого рівня.',
+    '3️⃣ Перемога дає більше нагород і підвищує рейтинг, поразка теж дає невелику компенсацію.',
+    '4️⃣ Кулдаун між боями: 2 год (1 год з GamePass).'
+  ].join('\n'),
+
+  seasons: [
+    '❓ Сезони',
+    '',
+    'Наразі рейтингова система працює як єдиний накопичувальний прогрес без циклів завершення. Повноцінні сезони з датами старту/кінця та нагородами за фінальне місце ще в розробці — слідкуй за 📜 Хроніками.'
+  ].join('\n'),
+
+  rules: [
+    '❓ Правила',
+    '',
+    '✅ Один акаунт Telegram — один ігровий профіль.',
+    '✅ Забороняється використовувати сторонні програми для автоматизації дій у грі.',
+    '✅ Образи, спам та шахрайство щодо інших гравців заборонені.',
+    '✅ Адміністрація залишає за собою право коригувати баланс гри та скидати прогрес у разі виявлення порушень.'
+  ].join('\n'),
+
+  clans: [
+    '❓ Клани',
+    '',
+    '🏰 Клан об\'єднує до 20+ гравців (залежить від рівня клану).',
+    '👑 Ролі: Глава → Заступник → Полководець → Сержант → Учасник.',
+    '🪙 Створення власного клану коштує 100 000 коінів (безкоштовно з GamePass).',
+    '🗺 Клани можуть захоплювати території через рейди та отримувати спільні нагороди.',
+    '🎯 Виконуйте спільний клан-квест разом, щоб поповнити казну клану.'
+  ].join('\n'),
+
+  tips: [
+    '❓ Поради',
+    '',
+    '💡 Забирай нагороди в 🎁 Бонусах за кожні кілька десятків отриманих карток.',
+    '💡 Виконуй щоденні 🏗 Завдання — це стабільне джерело коінів та очок.',
+    '💡 Не витрачай усі повторки одразу — обмінюй їх на спроби через ⚒ Крафт пакетами по 10.',
+    '💡 Вступай у клан якомога раніше — це дає бонус на арені та доступ до спільних нагород.',
+    '💡 Запрошуй друзів через 🔗 Реферали — це один із найшвидших способів отримати GamePass безкоштовно.'
+  ].join('\n')
+};
+
+const handleHelpHome = async (chatId, messageId, from) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, HELP_HOME_TEXT, { reply_markup: buildHelpHomeKeyboard() });
+};
+
+const handleHelpSection = async (chatId, messageId, from, section) => {
+  if (messageId) await deleteMessage(chatId, messageId);
+  const text = HELP_SECTIONS[section] ?? 'Розділ не знайдено.';
+
+  await sendMessage(chatId, text, {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 До допомоги', callback_data: 'menu:help' }]] }
+  });
+};
+
+const sendTeamMediaGroup = async (chatId, cards, caption) => {
+  const validCards = cards.filter((c) => c.imageUrl).slice(0, 10);
+  if (validCards.length === 0) return;
+
+  if (validCards.length === 1) {
+    await sendPhoto(chatId, validCards[0].imageUrl, caption);
+    return;
+  }
+
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  const mediaArray = [];
+
+  for (let i = 0; i < validCards.length; i += 1) {
+    const card = validCards[i];
+    const isFirst = i === 0;
+
+    if (isRemoteUrl(card.imageUrl)) {
+      mediaArray.push({
+        type: 'photo',
+        media: card.imageUrl,
+        ...(isFirst ? { caption, parse_mode: 'HTML' } : {})
+      });
+    } else {
+      try {
+        const filePath = resolveLocalAssetPath(card.imageUrl);
+        const fileBuffer = await readFile(filePath);
+        const attachName = `photo${i}`;
+        form.append(attachName, new Blob([fileBuffer]), path.basename(filePath));
+        mediaArray.push({
+          type: 'photo',
+          media: `attach://${attachName}`,
+          ...(isFirst ? { caption, parse_mode: 'HTML' } : {})
+        });
+      } catch (error) {
+        console.error(`Failed to read local card image for media group: ${card.imageUrl}`, error);
+      }
+    }
+  }
+
+  if (mediaArray.length === 0) return;
+
+  form.append('media', JSON.stringify(mediaArray));
+
+  const response = await fetch(`${TELEGRAM_API}/sendMediaGroup`, { method: 'POST', body: form });
+  if (!response.ok) {
+    console.error('sendMediaGroup failed:', response.status, await response.text());
+    await sendMessage(chatId, caption);
+  }
+};
+
 const formatClanListMessage = (clans) => {
   if (clans.length === 0) {
     return '🏰 Кланів ще немає. Стань першим — створи свій!';
@@ -317,6 +563,20 @@ const formatGamePassMessage = (status) => {
   ].join('\n');
 };
 
+const formatGroupTeamCaption = (displayName, team) => {
+  const filled = team.slots.filter(Boolean);
+  const lines = [`⚔️ ${displayName}, твоя команда у всесвіті:`, ''];
+
+  filled.forEach((card) => {
+    const rarityEmoji = RARITY_EMOJI[card.rarity] ?? '⚪';
+    lines.push(`${rarityEmoji} ${card.name}`);
+    lines.push(`🗡 Атака: ${card.attack} ❤️ Здоров'я: ${card.health}`);
+    lines.push('');
+  });
+
+  return lines.join('\n').trim();
+};
+
 const GAME_PASS_DURATION_DAYS_TEXT = '30';
 
 const buildGamePassKeyboard = (status) => ({
@@ -343,6 +603,149 @@ const handleGamePassBuy = async (chatId, from) => {
     currency: 'XTR',
     prices: [{ label: 'GamePass 30 днів', amount: status.costStars }]
   });
+};
+
+const handleGroupCard = async (chatId, from) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  try {
+    const result = await callApi(`/api/player/${from.id}/claim-card`, { method: 'POST' });
+
+    if (result.status === 'cooldown') {
+      await sendMessage(chatId, formatCooldownMessage(displayName, result));
+      return;
+    }
+    if (result.status === 'duplicate') {
+      await sendCardMessage(chatId, result.card, formatDuplicateMessage(displayName, result));
+      return;
+    }
+    await sendCardMessage(chatId, result.card, formatNewCardMessage(result.card, result));
+  } catch (error) {
+    console.error('Failed to claim card in group:', error);
+    await sendMessage(chatId, 'Не вдалося отримати картку. Спробуйте ще раз трохи пізніше.');
+  }
+};
+
+const handleGroupTeam = async (chatId, from) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  try {
+    const team = await callApi(`/api/player/${from.id}/arena/team`);
+    const filled = team.slots.filter(Boolean);
+
+    if (filled.length === 0) {
+      await sendMessage(chatId, formatArenaHomeMessage(displayName, team));
+      return;
+    }
+
+    const caption = formatGroupTeamCaption(displayName, team);
+    await sendTeamMediaGroup(chatId, filled, caption);
+  } catch (error) {
+    console.error('Failed to load team in group:', error);
+    await sendMessage(chatId, 'Не вдалося завантажити команду.');
+  }
+};;
+
+const handleGroupGame = async (chatId) => {
+  if (groupGames.has(chatId)) {
+    await sendMessage(chatId, '🎲 Гра вже триває! Зачекай на результат.');
+    return;
+  }
+
+  const lastGameAt = groupGameCooldowns.get(chatId);
+  const now = Date.now();
+  if (lastGameAt && now - lastGameAt < GROUP_GAME_COOLDOWN_MS) {
+    const remaining = GROUP_GAME_COOLDOWN_MS - (now - lastGameAt);
+    await sendMessage(chatId, `⏳ Наступну гру можна почати через ${formatDuration(remaining)}.`);
+    return;
+  }
+
+  groupGameCooldowns.set(chatId, now);
+  const game = { guesses: new Map() };
+  groupGames.set(chatId, game);
+
+  await sendMessage(chatId, 'Гра почалась! Виберіть число від 1 до 6, написавши його в чаті.\nЧас на ставки: 30 секунд!');
+
+  setTimeout(() => {
+    resolveGroupGame(chatId).catch((error) => console.error('Failed to resolve group game:', error));
+  }, GROUP_GAME_DURATION_MS);
+};
+
+const resolveGroupGame = async (chatId) => {
+  const game = groupGames.get(chatId);
+  if (!game) return;
+  groupGames.delete(chatId);
+
+  const diceResult = await callTelegram('sendDice', { chat_id: chatId, emoji: '🎲' });
+  const value = diceResult?.result?.dice?.value;
+
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+
+  if (!value) {
+    await sendMessage(chatId, '❌ Не вдалося кинути кістку. Спробуйте ще раз.');
+    return;
+  }
+
+  const winners = [...game.guesses.entries()].filter(([, g]) => g.value === value);
+
+  if (winners.length === 0) {
+    await sendMessage(chatId, `🎲 Результат кидка: ${value}!\nНіхто не вгадав число! 😢`);
+    return;
+  }
+
+  for (const [telegramId] of winners) {
+    try {
+      await callApi(`/api/player/${telegramId}/reward-shards`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: GROUP_GAME_REWARD_SHARDS })
+      });
+    } catch (error) {
+      console.error(`Failed to reward shards to ${telegramId}:`, error);
+    }
+  }
+
+  const names = winners.map(([, g]) => g.displayName).join(', ');
+  await sendMessage(chatId, `🎲 Результат кидка: ${value}!\n🎉 Вгадали: ${names}!\n🛡 +${GROUP_GAME_REWARD_SHARDS} уламків кожному переможцю!`);
+};
+
+const handleGroupNumberGuess = async (message) => {
+  const chatId = message.chat.id;
+  const game = groupGames.get(chatId);
+  if (!game) return false;
+
+  const text = message.text.trim();
+  if (!/^[1-6]$/.test(text)) return false;
+
+  const value = Number(text);
+  const displayName = message.from.first_name ?? message.from.username ?? 'Гравець';
+
+  game.guesses.set(String(message.from.id), { value, displayName });
+  await sendMessage(chatId, `${displayName} зробив ставку на ${value}!`);
+  return true;
+};
+
+const handleGroupMeme = async (chatId) => {
+  const meme = UKRAINIAN_MEMES[Math.floor(Math.random() * UKRAINIAN_MEMES.length)];
+  await sendMessage(chatId, meme);
+};
+
+const handleGroupMessage = async (message) => {
+  const chatId = message.chat.id;
+  const rawText = message.text.trim();
+  const normalized = normalizeGroupText(rawText);
+
+  const commandKey = Object.keys(GROUP_COMMANDS).find((key) => normalized === key);
+  if (commandKey) {
+    await ensurePlayerRegistered(message.from);
+    const command = GROUP_COMMANDS[commandKey];
+
+    if (command === 'card') await handleGroupCard(chatId, message.from);
+    else if (command === 'team') await handleGroupTeam(chatId, message.from);
+    else if (command === 'game') await handleGroupGame(chatId);
+    else if (command === 'meme') await handleGroupMeme(chatId);
+
+    return true;
+  }
+
+  return await handleGroupNumberGuess(message);
 };
 
 const formatReferralsMessage = (status) =>
@@ -1871,6 +2274,38 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
+    if (data === 'menu:rating') {
+      await handleRatingHome(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const ratingListMatch = data.match(/^rating:(season|alltime|arena|referrals)$/);
+    if (ratingListMatch) {
+      await handleRatingList(chatId, messageId, from, ratingListMatch[1]);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'rating:lastseason') {
+      await handleRatingLastSeason(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    if (data === 'menu:help') {
+      await handleHelpHome(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const helpSectionMatch = data.match(/^help:(resources|arena|seasons|rules|clans|tips)$/);
+    if (helpSectionMatch) {
+      await handleHelpSection(chatId, messageId, from, helpSectionMatch[1]);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
     const raidMatch = data.match(/^raid:go:(.+)$/);
     if (raidMatch) {
       await handleRaid(chatId, from, raidMatch[1], callbackQuery.id);
@@ -2057,7 +2492,7 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
-    const menuSectionMatch = data.match(/^menu:(rating|channels|help)$/);
+    const menuSectionMatch = data.match(/^menu:(channels)$/);
     if (menuSectionMatch) {
       await handleMenuSection(chatId, messageId, from, menuSectionMatch[1]);
       await answerCallbackQuery(callbackQuery.id);
@@ -2148,6 +2583,18 @@ const handleUpdate = async (update) => {
   const text = message.text.trim();
 
   console.log(`[message] chatId=${chatId} text=${JSON.stringify(text)} codePoints=${[...text].map((c) => c.codePointAt(0).toString(16)).join(',')}`);
+
+  const isGroupChat = message.chat.type === 'group' || message.chat.type === 'supergroup';
+
+  if (isGroupChat) {
+    const handled = await handleGroupMessage(message);
+    if (handled) return;
+
+    if (text === '/start' || text.startsWith('/start@')) {
+      await sendMessage(chatId, 'Привіт! Напишіть "Отримати карту", "Команда", "Гра" або "Мем", щоб грати прямо в цій групі. Для повного функціоналу пишіть мені в особисті повідомлення: t.me/' + (process.env.TELEGRAM_BOT_USERNAME ?? 'ShadowManiaBot'));
+    }
+    return;
+  }
 
   if (text.startsWith('/start')) {
     await ensurePlayerRegistered(message.from);

@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { getBonusesStatus, claimBonusMilestone } from './bonusesService.js';
 import { getGamePassStatus, activateGamePass } from './gamePassService.js';
 import { getLocationsMap, raidLocation } from './raidService.js';
+import { getSeasonRanking, getAllTimeRanking, getArenaRanking, getReferralsRanking } from './ratingService.js';
 import { startTerritoryScheduler } from './territoryScheduler.js';
 import { getClanMemberTelegramIds, getOrCreateClanQuest } from './clanService.js';
 import { getReferralStatus, registerReferral } from './referralService.js';
@@ -14,6 +15,7 @@ import { getShopStatus, buyBonusClaims, craftCard } from './shopService.js';
 import { searchAndFight, getArenaStatus, getTeamView, getOwnedCardBrowser, setTeamSlot, getArenaStats, getLastBattleLog } from './arenaService.js';
 import { startNotificationScheduler } from './notificationScheduler.js';
 import { getPlayerQuests, claimQuestReward } from './questService.js';
+import { getPrisma } from './prismaClient.js';
 import { getCraftAttemptsStatus, craftAttemptsFromDuplicates, craftAttemptsFromShards, craftAllAttempts } from './craftAttemptsService.js';
 import {
   listClans as listActiveClans,
@@ -46,6 +48,11 @@ import {
 } from './gameRules.js';
 
 const server = Fastify({ logger: true });
+
+server.get('/api/ratings/season', async () => ({ ranking: await getSeasonRanking() }));
+server.get('/api/ratings/alltime', async () => ({ ranking: await getAllTimeRanking() }));
+server.get('/api/ratings/arena', async () => ({ ranking: await getArenaRanking() }));
+server.get('/api/ratings/referrals', async () => ({ ranking: await getReferralsRanking() }));
 
 server.get('/api/map', async () => ({ locations: await getLocationsMap() }));
 
@@ -582,6 +589,31 @@ server.post('/api/player/:telegramId/referrals/register', async (request, reply)
     return { error: 'Inviter not found' };
   }
   return result;
+});
+
+server.post('/api/player/:telegramId/reward-shards', async (request, reply) => {
+  const params = request.params as { telegramId: string };
+  const body = request.body as { amount?: number };
+  const amount = body.amount ?? 0;
+
+  if (amount <= 0) {
+    reply.code(400);
+    return { error: 'amount must be positive' };
+  }
+
+  const prisma = getPrisma();
+  if (!prisma) {
+    reply.code(503);
+    return { error: 'Database unavailable' };
+  }
+
+  const user = await prisma.user.upsert({
+    where: { telegramId: params.telegramId },
+    update: { shards: { increment: amount } },
+    create: { telegramId: params.telegramId, displayName: `Player ${params.telegramId}`, shards: amount }
+  });
+
+  return { shards: user.shards };
 });
 
 server.get('/meta/game-rules', async () => ({

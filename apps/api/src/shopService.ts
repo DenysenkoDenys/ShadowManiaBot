@@ -2,6 +2,24 @@ import { getPrisma } from './prismaClient.js';
 import { ensureSeedWorld } from './seedRuntime.js';
 import { rarityConfig, type RarityKey, SHOP_BONUS_CLAIM_COST, SHOP_CRAFT_COST } from './gameRules.js';
 import { incrementQuestProgress } from './questService.js';
+import { SHOP_STARS_PACKAGES } from './gameRules.js';
+
+export const getStarsPackages = () => SHOP_STARS_PACKAGES;
+
+export const activateStarsPurchase = async (telegramId: string, packageIndex: number) => {
+  const prisma = getPrisma();
+  if (!prisma) return null;
+
+  const pkg = SHOP_STARS_PACKAGES[packageIndex];
+  if (!pkg) return null;
+
+  const user = await prisma.user.update({
+    where: { telegramId },
+    data: { bonusClaims: { increment: pkg.shards } }
+  });
+
+  return { bonusClaims: user.bonusClaims, packageBought: pkg };
+};
 
 export type ShopStatusView = {
   dustBalance: number;

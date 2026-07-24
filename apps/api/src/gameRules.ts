@@ -1,12 +1,12 @@
-export const ARENA_COOLDOWN_MS = 2 * 60 * 60 * 1000; 
-export const ARENA_COOLDOWN_PREMIUM_MS = 60 * 60 * 1000; 
+export const ARENA_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+export const ARENA_COOLDOWN_PREMIUM_MS = 60 * 60 * 1000;
 export const ARENA_TEAM_SIZE = 5;
 export const ARENA_RATING_K = 24;
 export const ARENA_WIN_DUST = { min: 20, max: 50 };
 export const ARENA_LOSS_DUST = { min: 5, max: 15 };
 export const ARENA_WIN_POINTS = 100;
 export const ARENA_LOSS_POINTS = 20;
-export const ARENA_PVP_CHANCE = 0.5; 
+export const ARENA_PVP_CHANCE = 0.5;
 export const rewardLadder = [100, 250, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000] as const;
 
 export const CLAN_BASE_MAX_MEMBERS = 9;
@@ -27,6 +27,17 @@ export const REFERRAL_REWARD_GAME_PASS_DAYS = 1;
 export const RAID_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 export const TERRITORY_PAYOUT_INTERVAL_MS = 2 * 60 * 60 * 1000;
 export const TERRITORY_PAYOUT_BONUS_CLAIMS = 1;
+
+export type StarsPackage = { shards: number; stars: number };
+
+export const SHOP_STARS_PACKAGES: StarsPackage[] = [
+  { shards: 5, stars: 10 },
+  { shards: 10, stars: 18 },
+  { shards: 30, stars: 45 },
+  { shards: 100, stars: 100 },
+  { shards: 240, stars: 200 },
+  { shards: 750, stars: 500 }
+];
 
 export const GAME_PASS_RARITY_WEIGHT_MULTIPLIER: Partial<Record<RarityKey, number>> = {
   epic: 1.5,

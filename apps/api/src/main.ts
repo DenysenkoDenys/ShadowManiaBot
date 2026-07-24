@@ -15,6 +15,7 @@ import { getShopStatus, buyBonusClaims, craftCard } from './shopService.js';
 import { searchAndFight, getArenaStatus, getTeamView, getOwnedCardBrowser, setTeamSlot, getArenaStats, getLastBattleLog } from './arenaService.js';
 import { startNotificationScheduler } from './notificationScheduler.js';
 import { getPlayerQuests, claimQuestReward } from './questService.js';
+import { getStarsPackages, activateStarsPurchase } from './shopService.js';
 import { getPrisma } from './prismaClient.js';
 import { getCraftAttemptsStatus, craftAttemptsFromDuplicates, craftAttemptsFromShards, craftAllAttempts } from './craftAttemptsService.js';
 import {
@@ -55,6 +56,17 @@ server.get('/api/ratings/arena', async () => ({ ranking: await getArenaRanking()
 server.get('/api/ratings/referrals', async () => ({ ranking: await getReferralsRanking() }));
 
 server.get('/api/map', async () => ({ locations: await getLocationsMap() }));
+server.get('/api/shop/stars-packages', async () => ({ packages: getStarsPackages() }));
+
+server.post('/api/player/:telegramId/shop/stars-purchase/:packageIndex', async (request, reply) => {
+  const params = request.params as { telegramId: string; packageIndex: string };
+  const result = await activateStarsPurchase(params.telegramId, Number(params.packageIndex));
+  if (!result) {
+    reply.code(404);
+    return { error: 'Package or player not found' };
+  }
+  return result;
+});
 
 server.post('/api/player/:telegramId/raid/:locationId', async (request, reply) => {
   const params = request.params as { telegramId: string; locationId: string };

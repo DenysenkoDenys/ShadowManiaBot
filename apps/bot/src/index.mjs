@@ -1436,9 +1436,54 @@ const buildShopKeyboard = (shop) => ({
       text: `${RARITY_EMOJI[rarity]} ${RARITY_LABELS[rarity]} — ${shop.craftCosts[rarity]} 🪙`,
       callback_data: `shop:craft:${rarity}`
     }]),
+    [{ text: '⭐ Купити спроби за зірки', callback_data: 'shop:stars' }],
     [{ text: '🔙 До меню', callback_data: 'menu:back' }]
   ]
 });
+
+const formatStarsShopMessage = (displayName) =>
+  [
+    `🎁 🪄 ${displayName}, ти можеш купити спроби за зірки.`,
+    'Підтримай проєкт, і ми разом зробимо його ще крутішим! Кошти йдуть на рекламу та розробку ShadowsMania ✨',
+    '',
+    'Задонатити іншим способом ➡️ @CoconutOneLove1', 'або ➡️ @denX3m'
+  ].join('\n');
+
+const buildStarsShopKeyboard = (packages) => {
+  const rows = [];
+  for (let i = 0; i < packages.length; i += 2) {
+    const row = packages.slice(i, i + 2).map((pkg, offset) => ({
+      text: `🎫 ${pkg.shards} = ⭐${pkg.stars}`,
+      callback_data: `stars:buy:${i + offset}`
+    }));
+    rows.push(row);
+  }
+  rows.push([{ text: '🔙 До магазину', callback_data: 'menu:shop' }]);
+  return { inline_keyboard: rows };
+};
+
+const handleStarsShop = async (chatId, messageId, from) => {
+  const displayName = from.first_name ?? from.username ?? 'Гравцю';
+  const { packages } = await callApi('/api/shop/stars-packages');
+
+  if (messageId) await deleteMessage(chatId, messageId);
+  await sendMessage(chatId, formatStarsShopMessage(displayName), { reply_markup: buildStarsShopKeyboard(packages) });
+};
+
+const handleStarsBuy = async (chatId, from, packageIndex) => {
+  const { packages } = await callApi('/api/shop/stars-packages');
+  const pkg = packages[packageIndex];
+  if (!pkg) return;
+
+  await callTelegram('sendInvoice', {
+    chat_id: chatId,
+    title: `${pkg.shards} спроб для ShadowMania`,
+    description: `Отримай ${pkg.shards} 🎫 спроб отримання картки за ${pkg.stars} ⭐.`,
+    payload: `stars_${from.id}_${packageIndex}`,
+    currency: 'XTR',
+    prices: [{ label: `${pkg.shards} спроб`, amount: pkg.stars }]
+  });
+};
 
 const handleShop = async (chatId, messageId, from) => {
   const shop = await callApi(`/api/player/${from.id}/shop`);
@@ -1844,7 +1889,6 @@ const formatCooldownMessage = (displayName, result) =>
     `Спроби: ${result.bonusClaims} 🎟 (1 спроба = 1 картка без таймера)`
   ].join('\n');
 
-// --- Collection browsing (CardsMania-style) ---
 
 const getRarityCounts = (collection) => {
   const totals = new Map(RARITY_ORDER.map((r) => [r, { owned: 0, total: 0 }]));
@@ -2280,6 +2324,19 @@ const handleCallbackQuery = async (callbackQuery) => {
       return;
     }
 
+    if (data === 'shop:stars') {
+      await handleStarsShop(chatId, messageId, from);
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
+    const starsBuyMatch = data.match(/^stars:buy:(\d+)$/);
+    if (starsBuyMatch) {
+      await handleStarsBuy(chatId, from, Number(starsBuyMatch[1]));
+      await answerCallbackQuery(callbackQuery.id);
+      return;
+    }
+
     const ratingListMatch = data.match(/^rating:(season|alltime|arena|referrals)$/);
     if (ratingListMatch) {
       await handleRatingList(chatId, messageId, from, ratingListMatch[1]);
@@ -2566,11 +2623,27 @@ const handleUpdate = async (update) => {
 
   if (message?.successful_payment) {
     await ensurePlayerRegistered(message.from);
-    const result = await callApi(`/api/player/${message.from.id}/gamepass/activate`, { method: 'POST' });
-    await sendMessage(
-      message.chat.id,
-      `🎉 GamePass активовано до ${formatDate(result.premiumUntil)}!\n+${result.bonusClaims - (result.bonusClaims - 5)} 🎫 спроб нараховано.`
-    );
+    const payload = message.successful_payment.invoice_payload;
+
+    if (payload.startsWith('gamepass_')) {
+      const result = await callApi(`/api/player/${message.from.id}/gamepass/activate`, { method: 'POST' });
+      await sendMessage(
+        message.chat.id,
+        `🎉 GamePass активовано до ${formatDate(result.premiumUntil)}!\n+5 🎫 спроб нараховано.`
+      );
+      return;
+    }
+
+    if (payload.startsWith('stars_')) {
+      const packageIndex = Number(payload.split('_')[2]);
+      const result = await callApi(`/api/player/${message.from.id}/shop/stars-purchase/${packageIndex}`, { method: 'POST' });
+      await sendMessage(
+        message.chat.id,
+        `✅ Дякуємо за підтримку! +${result.packageBought.shards} 🎫 спроб нараховано (тепер у тебе ${result.bonusClaims} 🎟).`
+      );
+      return;
+    }
+
     return;
   }
 
